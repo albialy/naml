@@ -23,9 +23,19 @@ export function LoginPage() {
 
     try {
       const response = await apiClient.post(endpoints.auth.login, { username, password });
-      const { access_token, user } = response.data;
       
-      login(access_token, user);
+      const token = response.data.access_token || response.data.token;
+      const user = response.data.user || {
+        id: response.data.id || 'unknown-id',
+        username: response.data.username,
+        role: response.data.role
+      };
+
+      if (!token || !user.username) {
+        throw new Error('استجابة غير صالحة من الخادم');
+      }
+      
+      login(token, user);
       
       if (user.role === 'super_admin') {
         navigate('/admin');
@@ -33,7 +43,16 @@ export function LoginPage() {
         navigate('/');
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail?.error || 'فشل تسجيل الدخول. تأكد من صحة البيانات.');
+      console.error("Login error:", err);
+      let errMsg = 'فشل تسجيل الدخول. تأكد من صحة البيانات.';
+      if (err.response?.data?.detail?.error) {
+        errMsg = err.response.data.detail.error;
+      } else if (err.response?.data?.detail && typeof err.response.data.detail === 'string') {
+        errMsg = err.response.data.detail;
+      } else if (err.message && err.message !== 'Request failed with status code 401') {
+        errMsg = err.message;
+      }
+      setError(errMsg);
     } finally {
       setIsLoading(false);
     }

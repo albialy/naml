@@ -24,9 +24,12 @@ async def login(request: LoginRequest):
     
     user = auth_manager.get_user(token.user_id)
     return {
-        "token": token.token,
-        "role": user.role.value if hasattr(user.role, 'value') else user.role,
-        "username": user.username
+        "access_token": token.token,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role.value if hasattr(user.role, 'value') else user.role
+        }
     }
 
 @router.post("/api/auth/logout")
