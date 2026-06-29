@@ -1,0 +1,85 @@
+from .connectors.base import BaseConnector
+from .memory import SharedMemory
+
+class Worker:
+    def __init__(self, name: str, role: str, sub_question: str, perspective: str, bias_warning: str, speed: str, connector: BaseConnector, shared_memory: SharedMemory):
+        self.name = name
+        self.role = role
+        self.sub_question = sub_question
+        self.perspective = perspective
+        self.bias_warning = bias_warning
+        self.speed = speed
+        self.connector = connector
+        self.shared_memory = shared_memory
+        
+        from .settings_manager import settings_manager
+        self.settings_manager = settings_manager
+
+    def _build_context(self) -> str:
+        if not self.shared_memory.findings:
+            return "No previous findings yet. / لا توجد نتائج سابقة بعد."
+        
+        context_parts = []
+        for finding in self.shared_memory.findings:
+            if finding["agent_name"] != self.name:
+                context_parts.append(
+                    f"Agent {finding['agent_name']} answered '{finding['sub_question']}':\n{finding['response']}"
+                )
+        return "\n\n".join(context_parts)
+
+    def execute(self) -> str:
+        system_prompt = f"""You are {self.name}.
+Your role: {self.role}
+Your unique perspective: {self.perspective}
+Your known bias to watch for: {self.bias_warning}
+
+You are part of a thinking system working on:
+ORIGINAL TASK: {self.shared_memory.task_original}
+REAL QUESTION: {self.shared_memory.task_real}
+
+Your specific sub-question:
+{self.sub_question}
+
+Context from previous agents:
+{self._build_context()}
+
+Rules:
+1. Answer only your sub-question.
+2. Do not repeat what previous agents said.
+3. Add only what your perspective uniquely sees.
+4. End with: CONFIDENCE: [0-100]%
+5. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]"""
+
+        user_message = f"Please answer your sub-question: {self.sub_question}"
+        
+        # Determine temperature based on speed and settings
+        settings = self.settings_manager.get_settings()
+        workers_config = settings.get("workers", {})
+        
+        temperature = 0.8 if self.speed == "fast" else 0.2
+        max_tokens = 2048 if self.speed == "fast" else 4096
+        
+        # Look for matching worker type in settings
+        worker_type = "fast" if self.speed == "fast" else "deep_analytical"
+        if worker_type in workers_config:
+            temperature = workers_config[worker_type].get("temperature", temperature)
+            max_tokens = workers_config[worker_type].get("max_tokens", max_tokens)
+        
+        try:
+            response = self.connector.complete(system_prompt, user_message, temperature, max_tokens)
+            
+            # Extract confidence if possible
+            confidence = 80.0
+            if "CONFIDENCE:" in response.upper():
+                try:
+                    conf_str = response.upper().split("CONFIDENCE:")[1].split("%")[0].strip()
+                    confidence = float(conf_str)
+                except:
+                    pass
+                    
+            self.shared_memory.add_finding(self.name, self.sub_question, response, confidence)
+            return response
+        except Exception as e:
+            error_response = f"Worker {self.name} failed / فشل العامل: {str(e)}"
+            self.shared_memory.add_finding(self.name, self.sub_question, error_response, 0.0)
+            return error_response

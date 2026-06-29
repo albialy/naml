@@ -1,0 +1,22 @@
+director:
+  provider: groq
+  model: llama-3.3-70b-versatile
+  temperature: 0.3
+  max_tokens: 4096
+
+workers:
+  deep_analytical:
+    provider: openrouter
+    model: qwen/qwen-72b-chat
+    temperature: 0.2
+    max_tokens: 4096
+  creative:
+    provider: openrouter
+    model: mistralai/mixtral-8x7b-instruct
+    temperature: 0.8
+    max_tokens: 2048
+  fast:
+    provider: groq
+    model: llama-3.3-70b-versatile
+    temperature: 0.5
+    max_tokens: 2048
