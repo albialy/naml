@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 
 export const apiClient = axios.create({
-  baseURL: 'https://naml-production.up.railway.app',
+  baseURL: import.meta.env.VITE_API_URL || '/',
   headers: {
     'Content-Type': 'application/json',
   },
