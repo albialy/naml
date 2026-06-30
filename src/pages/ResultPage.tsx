@@ -96,47 +96,75 @@ export function ResultPage() {
     }
   };
 
+  const rawConfidence = sessionData?.confidence_final || 0;
+  const displayConfidence = Math.min(100, Math.round(
+    rawConfidence > 1 ? rawConfidence : rawConfidence * 100
+  ));
+
   return (
     <div className="max-w-4xl mx-auto w-full pb-20">
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="px-2">
-            <ArrowRight className="w-5 h-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">نتيجة التحليل</h1>
-        </div>
-        {sessionData?.confidence_final && (
-          <Badge variant={sessionData.confidence_final > 0.8 ? "success" : sessionData.confidence_final > 0.5 ? "warning" : "danger"}>
-            مستوى الثقة: {Math.round(sessionData.confidence_final * 100)}%
-          </Badge>
-        )}
+      <div className="flex items-center gap-4 mb-8">
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="px-2">
+          <ArrowRight className="w-5 h-5" />
+        </Button>
+        <h1 className="text-3xl font-bold tracking-tight">نتيجة التحليل</h1>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="text-[#888888] text-sm mb-4 font-medium">السؤال الأصلي:</div>
-            <p className="text-lg leading-relaxed">{sessionData?.task_original}</p>
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }} 
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
+        <Card className="mb-6 border-[#2A2A2A] bg-gradient-to-br from-[#1A1A1A] to-[#111111]">
+          <CardContent className="p-6 md:p-8 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+            <div className="flex-1">
+              <div className="text-[#F5A623] text-sm font-semibold tracking-wider mb-3 uppercase">
+                السؤال الأصلي
+              </div>
+              <p className="text-xl md:text-2xl font-medium leading-relaxed text-white border-r-4 border-[#F5A623] pr-4">
+                "{sessionData?.task_original}"
+              </p>
+            </div>
+            {sessionData?.confidence_final !== undefined && (
+              <div className="flex flex-col items-center justify-center shrink-0 w-32 h-32 rounded-full border-4 border-[#333333] relative">
+                <div 
+                  className="absolute inset-0 rounded-full border-4 border-[#F5A623] rounded-full opacity-80"
+                  style={{ clipPath: `polygon(0 0, 100% 0, 100% ${displayConfidence}%, 0 ${displayConfidence}%)` }}
+                ></div>
+                <span className="text-3xl font-bold text-[#F5A623] relative z-10">{displayConfidence}%</span>
+                <span className="text-xs text-[#888888] font-medium relative z-10">مستوى الثقة</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        <Card className="mb-8 border-[#F5A623]/30 bg-[#111111]/80 backdrop-blur-sm">
-          <CardContent className="p-8 prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-[#0A0A0A] prose-pre:border prose-pre:border-[#1E1E1E]">
-            <ReactMarkdown>{sessionData?.final_synthesis || 'لا توجد نتيجة'}</ReactMarkdown>
+        <Card className="mb-8 border-[#F5A623]/20 bg-[#0F0F0F] shadow-2xl">
+          <CardContent className="p-8 md:p-10">
+            <div className="prose prose-invert max-w-none 
+              prose-p:text-lg prose-p:leading-relaxed prose-p:text-gray-300
+              prose-headings:text-[#F5A623] prose-headings:font-bold prose-headings:tracking-tight
+              prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl
+              prose-ul:list-none prose-ul:pl-0 prose-ul:space-y-3
+              prose-li:relative prose-li:pr-6 prose-li:text-gray-300
+              before:prose-li:absolute before:prose-li:right-0 before:prose-li:top-3 before:prose-li:w-2 before:prose-li:h-2 before:prose-li:bg-[#F5A623] before:prose-li:rounded-full
+              prose-strong:text-white prose-strong:font-semibold
+              prose-pre:bg-[#1A1A1A] prose-pre:border prose-pre:border-[#2A2A2A] prose-pre:rounded-xl">
+              <ReactMarkdown>{sessionData?.final_synthesis || 'لا توجد نتيجة'}</ReactMarkdown>
+            </div>
           </CardContent>
         </Card>
 
         <div className="flex flex-wrap gap-4 items-center">
-          <Button onClick={handleCopy} variant="secondary" className="gap-2">
-            {copied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+          <Button onClick={handleCopy} variant="secondary" className="gap-2 transition-all hover:scale-105">
+            {copied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
             {copied ? 'تم النسخ' : 'نسخ النتيجة'}
           </Button>
-          <Button onClick={() => navigate('/')} variant="primary" className="gap-2">
-            <RotateCcw className="w-4 h-4" />
+          <Button onClick={() => navigate('/')} variant="primary" className="gap-2 transition-all hover:scale-105">
+            <RotateCcw className="w-5 h-5" />
             تحليل جديد
           </Button>
           <Button disabled variant="outline" className="gap-2 opacity-50">
-            حفظ
+            حفظ (قريباً)
           </Button>
         </div>
       </motion.div>

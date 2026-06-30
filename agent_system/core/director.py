@@ -220,7 +220,7 @@ Provide a comprehensive, unified final answer. Note any contradictions and how y
         max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
         response = self.groq_connector.complete(
-            system_prompt="You are the lead synthesizer. Combine multiple perspectives into one coherent final answer.",
+            system_prompt="You are the lead synthesizer. Combine multiple perspectives into one coherent final answer.\n\nCRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the original task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.",
             user_message=prompt,
             temperature=temperature,
             max_tokens=max_tokens

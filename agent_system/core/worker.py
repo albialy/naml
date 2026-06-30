@@ -48,7 +48,8 @@ Rules:
 2. Do not repeat what previous agents said.
 3. Add only what your perspective uniquely sees.
 4. End with: CONFIDENCE: [0-100]%
-5. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]"""
+5. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
+6. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language."""
 
         user_message = f"Please answer your sub-question: {self.sub_question}"
         
