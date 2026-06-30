@@ -14,7 +14,11 @@ app = FastAPI(title="Multi-Agent AI Orchestration")
 # CORS middleware for localhost:3000 and any origin needed
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "https://idyllic-hotteok-9d62db.netlify.app",
+        "*"
+    ],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
