@@ -1,6 +1,6 @@
 import os
 import requests
-from .base import BaseConnector
+from agent_system.core.connectors.base import BaseConnector
 import logging
 
 logger = logging.getLogger(__name__)

@@ -2,11 +2,11 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from pydantic import BaseModel
 import os
 import json
-from ...core.memory import SharedMemory
-from ...core.director import Director
-from ...core.auth.models import User, UserRole
-from ...core.auth.middleware import get_current_user, require_super_admin
-from ...core.auth.manager import auth_manager
+from agent_system.core.memory import SharedMemory
+from agent_system.core.director import Director
+from agent_system.core.auth.models import User, UserRole
+from agent_system.core.auth.middleware import get_current_user, require_super_admin
+from agent_system.core.auth.manager import auth_manager
 
 router = APIRouter()
 director = Director()

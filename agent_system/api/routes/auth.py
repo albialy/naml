@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Security
 from pydantic import BaseModel
-from ...core.auth.manager import auth_manager
-from ...core.auth.models import User
-from ...core.auth.middleware import get_current_user
+from agent_system.core.auth.manager import auth_manager
+from agent_system.core.auth.models import User
+from agent_system.core.auth.middleware import get_current_user
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter()

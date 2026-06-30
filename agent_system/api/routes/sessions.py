@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 import os
 import json
-from ...core.auth.models import User, UserRole
-from ...core.auth.middleware import get_current_user
+from agent_system.core.auth.models import User, UserRole
+from agent_system.core.auth.middleware import get_current_user
 
 router = APIRouter()
 

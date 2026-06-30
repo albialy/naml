@@ -4,7 +4,7 @@ import uuid
 import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
-from .models import User, UserRole, AuthToken
+from agent_system.core.auth.models import User, UserRole, AuthToken
 
 STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'storage')
 USERS_FILE = os.path.join(STORAGE_DIR, 'users.json')

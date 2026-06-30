@@ -1,7 +1,7 @@
 from fastapi import Request, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from .manager import auth_manager
-from .models import User, UserRole
+from agent_system.core.auth.manager import auth_manager
+from agent_system.core.auth.models import User, UserRole
 
 security = HTTPBearer()
 

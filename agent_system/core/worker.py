@@ -1,5 +1,5 @@
-from .connectors.base import BaseConnector
-from .memory import SharedMemory
+from agent_system.core.connectors.base import BaseConnector
+from agent_system.core.memory import SharedMemory
 
 class Worker:
     def __init__(self, name: str, role: str, sub_question: str, perspective: str, bias_warning: str, speed: str, connector: BaseConnector, shared_memory: SharedMemory):
@@ -12,7 +12,7 @@ class Worker:
         self.connector = connector
         self.shared_memory = shared_memory
         
-        from .settings_manager import settings_manager
+        from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
 
     def _build_context(self) -> str:

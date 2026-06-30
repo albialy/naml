@@ -1,10 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import tasks, sessions, auth, admin, settings
-from ..core.connectors.groq_connector import GroqConnector
-from ..core.connectors.openrouter_connector import OpenRouterConnector
+from agent_system.api.routes import tasks, sessions, auth, admin, settings
+from agent_system.core.connectors.groq_connector import GroqConnector
+from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 import logging
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -44,3 +47,14 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "message": "System is running / النظام يعمل"}
+
+# Serve React build (must be AFTER all API routes)
+DIST_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "dist")
+if os.path.exists(DIST_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(DIST_DIR, "assets")), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_react(full_path: str):
+        # API routes already handled above; serve index.html for everything else
+        index_path = os.path.join(DIST_DIR, "index.html")
+        return FileResponse(index_path)

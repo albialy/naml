@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from ...core.auth.manager import auth_manager, LOGS_FILE
-from ...core.auth.models import User, UserRole
-from ...core.auth.middleware import require_super_admin
+from agent_system.core.auth.manager import auth_manager, LOGS_FILE
+from agent_system.core.auth.models import User, UserRole
+from agent_system.core.auth.middleware import require_super_admin
 import os
 import json
 

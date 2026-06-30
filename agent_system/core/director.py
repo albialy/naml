@@ -3,11 +3,11 @@ import re
 from datetime import datetime
 import yaml
 import os
-from .memory import SharedMemory
-from .worker import Worker
-from .orchestrator import Orchestrator
-from .connectors.groq_connector import GroqConnector
-from .connectors.openrouter_connector import OpenRouterConnector
+from agent_system.core.memory import SharedMemory
+from agent_system.core.worker import Worker
+from agent_system.core.orchestrator import Orchestrator
+from agent_system.core.connectors.groq_connector import GroqConnector
+from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 
 DIRECTOR_SYSTEM_PROMPT = """You are not an assistant. You are a thinking system.
 Your job is not to answer questions.
@@ -95,7 +95,7 @@ Respond only in valid JSON matching this structure:
 
 class Director:
     def __init__(self):
-        from .settings_manager import settings_manager
+        from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
         
         settings = self.settings_manager.get_settings()

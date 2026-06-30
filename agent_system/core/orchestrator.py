@@ -1,10 +1,10 @@
 from typing import List
-from .worker import Worker
-from .memory import SharedMemory
+from agent_system.core.worker import Worker
+from agent_system.core.memory import SharedMemory
 
 class Orchestrator:
     def __init__(self):
-        from .settings_manager import settings_manager
+        from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
 
     def run_pipeline(self, workers: List[Worker], memory: SharedMemory):

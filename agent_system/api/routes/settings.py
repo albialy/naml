@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
-from ...core.auth.models import User
-from ...core.auth.middleware import require_super_admin
-from ...core.settings_manager import settings_manager, AVAILABLE_MODELS
-from ...core.connectors.groq_connector import GroqConnector
-from ...core.connectors.openrouter_connector import OpenRouterConnector
+from agent_system.core.auth.models import User
+from agent_system.core.auth.middleware import require_super_admin
+from agent_system.core.settings_manager import settings_manager, AVAILABLE_MODELS
+from agent_system.core.connectors.groq_connector import GroqConnector
+from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 import time
 
 router = APIRouter()

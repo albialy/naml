@@ -3,7 +3,7 @@ import os
 import yaml
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from .auth.manager import auth_manager
+from agent_system.core.auth.manager import auth_manager
 
 STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'storage')
 SETTINGS_FILE = os.path.join(STORAGE_DIR, 'settings.json')

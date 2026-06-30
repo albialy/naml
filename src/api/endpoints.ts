@@ -1,25 +1,25 @@
 export const endpoints = {
   auth: {
-    login: '/api/auth/login',
+    login: '/auth/login',
   },
   task: {
-    create: '/api/task',
-    status: (id: string) => `/api/task/${id}/status`,
-    result: (id: string) => `/api/sessions/${id}`,
+    create: '/task',
+    status: (id: string) => `/task/${id}/status`,
+    result: (id: string) => `/sessions/${id}`,
   },
   history: {
-    list: '/api/sessions',
+    list: '/sessions',
   },
   admin: {
-    users: '/api/admin/users',
-    updateRole: (id: string) => `/api/admin/users/${id}/role`,
-    deleteUser: (id: string) => `/api/admin/users/${id}`,
-    settings: '/api/settings',
-    settingsDirector: '/api/settings/director',
-    settingsWorker: (type: string) => `/api/settings/workers/${type}`,
-    settingsWorkers: '/api/settings/workers',
-    settingsSystem: '/api/settings/system',
-    availableModels: '/api/settings/available-models',
-    testConnection: (provider: string) => `/api/settings/test-connection/${provider}`,
+    users: '/admin/users',
+    updateRole: (id: string) => `/admin/users/${id}/role`,
+    deleteUser: (id: string) => `/admin/users/${id}`,
+    settings: '/settings',
+    settingsDirector: '/settings/director',
+    settingsWorker: (type: string) => `/settings/workers/${type}`,
+    settingsWorkers: '/settings/workers',
+    settingsSystem: '/settings/system',
+    availableModels: '/settings/available-models',
+    testConnection: (provider: string) => `/settings/test-connection/${provider}`,
   }
 };
