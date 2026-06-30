@@ -104,6 +104,22 @@ export function LoginPage() {
                   تسجيل الدخول
                 </Button>
 
+                <Button 
+                  type="button" 
+                  variant="secondary" 
+                  className="w-full mt-2" 
+                  onClick={() => {
+                    login('mock-token', {
+                      id: 'temp-id',
+                      username: 'ضيف (تخطي)',
+                      role: 'super_admin'
+                    });
+                    navigate('/');
+                  }}
+                >
+                  تخطي (دخول مؤقت كمدير)
+                </Button>
+
                 <div className="relative py-4 flex items-center justify-center">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-[#1E1E1E]"></div>

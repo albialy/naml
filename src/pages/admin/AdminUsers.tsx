@@ -41,7 +41,7 @@ export function AdminUsers() {
               <tbody className="divide-y divide-[#1E1E1E]">
                 {isLoading ? (
                   <tr><td colSpan={5} className="text-center py-8">جاري التحميل...</td></tr>
-                ) : users?.map((user: any) => (
+                ) : Array.isArray(users) && users.map((user: any) => (
                   <tr key={user.id} className="hover:bg-[#1A1A1A]/50 transition-colors">
                     <td className="px-6 py-4 font-medium">{user.username}</td>
                     <td className="px-6 py-4">

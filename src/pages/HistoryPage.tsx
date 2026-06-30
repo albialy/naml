@@ -22,9 +22,9 @@ export function HistoryPage() {
     }
   });
 
-  const filteredHistory = history?.filter(item => 
+  const filteredHistory = Array.isArray(history) ? history.filter(item => 
     item.task_original.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ) : [];
 
   return (
     <div className="max-w-4xl mx-auto w-full pb-20">

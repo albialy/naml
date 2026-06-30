@@ -22,8 +22,10 @@ export function AdminDashboard() {
   });
 
   const today = new Date().toISOString().split('T')[0];
-  const todaySessions = sessions?.filter((s: any) => s.created_at?.startsWith(today)) || [];
-  const avgConfidence = sessions?.reduce((acc: number, s: any) => acc + (s.confidence_final || 0), 0) / (sessions?.length || 1);
+  const todaySessions = Array.isArray(sessions) ? sessions.filter((s: any) => s.created_at?.startsWith(today)) : [];
+  const avgConfidence = Array.isArray(sessions) && sessions.length > 0 
+    ? sessions.reduce((acc: number, s: any) => acc + (s.confidence_final || 0), 0) / sessions.length 
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -35,7 +37,7 @@ export function AdminDashboard() {
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-sm text-[#888888] font-medium mb-1">إجمالي المستخدمين</p>
-                <h3 className="text-3xl font-bold">{users?.length || 0}</h3>
+                <h3 className="text-3xl font-bold">{Array.isArray(users) ? users.length : 0}</h3>
               </div>
               <div className="p-2 bg-amber-500/10 rounded-lg">
                 <Users className="w-5 h-5 text-[#F5A623]" />

@@ -119,7 +119,7 @@ export function HomePage() {
         </form>
       </motion.div>
 
-      {history && history.length > 0 && (
+      {Array.isArray(history) && history.length > 0 && (
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
