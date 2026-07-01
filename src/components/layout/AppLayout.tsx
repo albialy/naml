@@ -10,7 +10,7 @@ export function AppLayout() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[#0A0A0A] text-white flex flex-col font-sans overflow-hidden" dir="rtl">
+    <div className="relative min-h-screen bg-transparent text-white flex flex-col font-sans overflow-hidden" dir="rtl">
       {/* Ambient background glows for glass effect */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 h-[500px] w-[500px] rounded-full bg-[#F5A623]/10 blur-[120px]" />
