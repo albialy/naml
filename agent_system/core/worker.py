@@ -47,10 +47,11 @@ Rules:
 1. Answer only your sub-question.
 2. Do not repeat what previous agents said.
 3. Add only what your perspective uniquely sees.
-4. End with: CONFIDENCE: [0-100]%
-5. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
-6. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language."""
-
+4. ANTI-HALLUCINATION RULE (most important): If the task refers to something you cannot actually see or that was not provided (an attached file, a document, data, an image, a link, or any missing context), you MUST NOT invent or imagine its contents. Do not describe what the file "might contain" or "could include". Instead, state clearly and honestly that the referenced material was not provided to you, and set your confidence very low (below 20). Refusing to fabricate is a success, not a failure.
+5. Base every claim only on information actually present in the task and the context above. If you are speculating, say so explicitly.
+6. End with: CONFIDENCE: [0-100]% (be honest: low confidence when information is missing)
+7. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
+8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.
         user_message = f"Please answer your sub-question: {self.sub_question}"
         
         # Determine temperature based on speed and settings
