@@ -3,7 +3,17 @@ import { cn } from '../../lib/utils';
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("rounded-xl border border-[#1E1E1E] bg-[#111111] text-white shadow-sm", className)} {...props} />
+    <div
+      className={cn(
+        "relative rounded-3xl border border-white/10 bg-white/[0.03] text-white backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] overflow-hidden",
+        className
+      )}
+      {...props}
+    >
+      {/* Specular highlight on top edge */}
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+      {props.children}
+    </div>
   );
 }
 
