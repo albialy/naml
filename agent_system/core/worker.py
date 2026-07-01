@@ -47,21 +47,20 @@ Rules:
 1. Answer only your sub-question.
 2. Do not repeat what previous agents said.
 3. Add only what your perspective uniquely sees.
-4. ANTI-HALLUCINATION RULE (most important): If the task refers to something you cannot actually see or that was not provided (an attached file, a document, data, an image, a link, or any missing context), you MUST NOT invent or imagine its contents. Do not describe what the file "might contain" or "could include". Instead, state clearly and honestly that the referenced material was not provided to you, and set your confidence very low (below 20). Refusing to fabricate is a success, not a failure.
+4. ANTI-HALLUCINATION RULE (most important): If the task refers to something you cannot actually see or that was not provided to you (an attached file, a document, data, an image, a link, or any missing context), you MUST NOT invent or imagine its contents. Do not describe what the file might contain or could include. Instead, state clearly and honestly that the referenced material was not provided to you, and set your confidence very low, below 20. Refusing to fabricate is a success, not a failure.
 5. Base every claim only on information actually present in the task and the context above. If you are speculating, say so explicitly.
-6. End with: CONFIDENCE: [0-100]% (be honest: low confidence when information is missing)
+6. End with: CONFIDENCE: [0-100]% (be honest: use low confidence when information is missing)
 7. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
-8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.
+8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language."""
+
         user_message = f"Please answer your sub-question: {self.sub_question}"
         
-        # Determine temperature based on speed and settings
         settings = self.settings_manager.get_settings()
         workers_config = settings.get("workers", {})
         
         temperature = 0.8 if self.speed == "fast" else 0.2
         max_tokens = 2048 if self.speed == "fast" else 4096
         
-        # Look for matching worker type in settings
         worker_type = "fast" if self.speed == "fast" else "deep_analytical"
         if worker_type in workers_config:
             temperature = workers_config[worker_type].get("temperature", temperature)
@@ -70,7 +69,6 @@ Rules:
         try:
             response = self.connector.complete(system_prompt, user_message, temperature, max_tokens)
             
-            # Extract confidence if possible
             confidence = 80.0
             if "CONFIDENCE:" in response.upper():
                 try:
