@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,7 +7,7 @@ import { endpoints } from '../api/endpoints';
 import { Button } from '../components/ui/Button';
 import { Card, CardContent } from '../components/ui/Card';
 import { SessionSummary } from '../types';
-import { Clock } from 'lucide-react';
+import { Clock, Paperclip, X } from 'lucide-react';
 
 const PLACEHOLDERS = [
   "حلل أسباب فشل المشاريع الناشئة...",
@@ -19,6 +19,8 @@ const PLACEHOLDERS = [
 export function HomePage() {
   const [task, setTask] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -53,11 +55,22 @@ export function HomePage() {
     }
   };
 
+  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const isRunning = createTask.isPending;
 
   return (
     <div className="flex flex-col items-center justify-center flex-1 max-w-3xl mx-auto w-full pb-20 pt-10">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full text-center mb-8"
@@ -66,14 +79,41 @@ export function HomePage() {
         <p className="text-xl text-[#888888]">اكتب سؤالك أو مهمتك بأي لغة وسيقوم نمل بالتفكير وتحليل الإجابة.</p>
       </motion.div>
 
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.1 }}
         className="w-full relative"
       >
+        {/* File chips */}
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {files.map((file, index) => (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] backdrop-blur-xl px-3 py-1.5 text-xs text-white"
+              >
+                <Paperclip className="w-3 h-3 text-[#F5A623]" />
+                <span className="max-w-[150px] truncate">{file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFile(index)}
+                  className="text-white/50 hover:text-white transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
-          <div className="relative rounded-2xl border border-[#1E1E1E] bg-[#111111] overflow-hidden focus-within:ring-1 focus-within:ring-[#F5A623] focus-within:border-[#F5A623] transition-all">
+          <div className="relative rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)] overflow-hidden focus-within:ring-2 focus-within:ring-[#F5A623]/50 focus-within:border-[#F5A623]/40 transition-all">
+            {/* Specular highlight */}
+            <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+
             <textarea
               className="w-full h-40 bg-transparent text-white p-6 resize-none focus:outline-none text-lg leading-relaxed placeholder:text-transparent"
               value={task}
@@ -97,12 +137,31 @@ export function HomePage() {
                 </AnimatePresence>
               </div>
             )}
-            
+
             <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center">
-              <span className="text-xs text-[#888888]">{task.length}/2000</span>
-              <Button 
-                type="submit" 
-                size="lg" 
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-[#888888]">{task.length}/2000</span>
+                {/* File attach button */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.xlsx,.txt,.csv,image/*"
+                  className="hidden"
+                  onChange={handleFilePick}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center justify-center h-9 w-9 rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-xl text-white/60 hover:text-[#F5A623] hover:border-[#F5A623]/40 transition-all"
+                  title="إرفاق ملفات"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+              </div>
+              <Button
+                type="submit"
+                size="lg"
                 disabled={!task.trim() || isRunning}
                 className="px-8 font-bold text-base"
               >
@@ -120,7 +179,7 @@ export function HomePage() {
       </motion.div>
 
       {Array.isArray(history) && history.length > 0 && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
@@ -132,8 +191,8 @@ export function HomePage() {
           </div>
           <div className="grid gap-3">
             {history.slice(0, 3).map((session) => (
-              <Card 
-                key={session.session_id} 
+              <Card
+                key={session.session_id}
                 className="cursor-pointer hover:border-[#F5A623]/50 transition-colors"
                 onClick={() => navigate(`/result/${session.session_id}`)}
               >
