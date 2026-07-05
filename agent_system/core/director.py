@@ -141,7 +141,7 @@ class Director:
 
         # Critic must be a DIFFERENT mind than the director.
         if "gpt-oss" in self.director_model or "qwen3" in self.director_model:
-            self.critic_connector = GroqConnector(model_name="llama-3.3-70b-versatile")
+            self.director_model = "openai/gpt-oss-120b"
         else:
             self.critic_connector = GroqConnector(model_name="openai/gpt-oss-120b")
 
