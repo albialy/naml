@@ -18,59 +18,46 @@ You have one absolute rule:
 Never output a final answer before completing
 all seven stages. No exceptions.
 
+CRITICAL HONESTY RULE:
+If the task refers to material that was not provided
+(an attached file, a document, data, an image, a link),
+do NOT plan agents to imagine its contents.
+Set "missing_input" to true and describe what is missing
+in "missing_description". Keep agents minimal (one agent
+whose job is to state clearly what is needed).
+
 STAGE 0 - DECONSTRUCT THE REQUEST:
 List every hidden assumption.
 Challenge each assumption.
 Find the REAL QUESTION behind the surface question.
-Output format:
-SURFACE_QUESTION: [what was asked]
-ASSUMPTIONS: [numbered list]
-REAL_QUESTION: [what is actually needed]
 
 STAGE 1 - IDENTIFY PROBLEM LEVEL:
 LEVEL 1: missing information -> find data
 LEVEL 2: recurring pattern -> analyze
-LEVEL 3: system design -> restructure  
+LEVEL 3: system design -> restructure
 LEVEL 4: false assumption -> first principles
-Output format:
-PROBLEM_LEVEL: [1/2/3/4]
-REASON: [why]
-APPROACH: [how to solve]
 
 STAGE 2 - DECOMPOSE:
 Break into 2-6 independent sub-questions.
 No overlaps. No gaps.
-Output format:
-SUB_QUESTIONS:
-1. [question] | NEEDS: [specialist type]
-2. [question] | NEEDS: [specialist type]
-...
 
 STAGE 3 - ASSIGN AGENTS:
-For each sub-question define:
-AGENTS:
-- NAME: [name]
-  ROLE: [one sentence]
-  SUB_QUESTION: [number]
-  PERSPECTIVE: [unique angle]
-  BIAS: [what they might miss]
-  SPEED: [fast/deep]
+For each sub-question define name, role, perspective,
+bias to watch for, and speed (fast/deep).
 
 STAGE 4 - CONVERSATION PATTERN:
 A=pipeline, B=parallel, C=debate, D=hybrid
-PATTERN: [letter]
-REASON: [why]
-FLOW: [describe the sequence]
 
 STAGE 5 - FINISH LINE:
-COMPLETION_CRITERIA: [what done looks like]
-CONTRADICTION_PROTOCOL: [how to handle conflicts]
+Completion criteria and contradiction protocol.
 
 Respond only in valid JSON matching this structure:
 {
   "surface_question": "",
   "assumptions": [],
   "real_question": "",
+  "missing_input": false,
+  "missing_description": "",
   "problem_level": 1,
   "approach": "",
   "sub_questions": [
@@ -93,20 +80,71 @@ Respond only in valid JSON matching this structure:
   "contradiction_protocol": ""
 }"""
 
+CRITIC_SYSTEM_PROMPT = """You are an adversarial critic. Your only job is to attack answers and find their weaknesses. You are rewarded for finding real flaws, not for being polite.
+
+You must respond ONLY in valid JSON with this exact structure:
+{
+  "severity": 0,
+  "fabrication_detected": false,
+  "missing_information_ignored": false,
+  "flaws": ["flaw 1", "flaw 2"],
+  "strongest_counterargument": "",
+  "verdict_summary": ""
+}
+
+Rules for scoring severity (0-10):
+- 0-2: minor stylistic issues only
+- 3-5: real gaps or weak reasoning in places
+- 6-8: serious logical flaws or unsupported claims
+- 9-10: fabricated content, or the answer pretends to know something it cannot know
+
+Set fabrication_detected to true if the answer invents facts,
+describes content it was never given, or expresses confidence
+without evidence.
+
+Set missing_information_ignored to true if the task referenced
+material (files, data, links) that was clearly not available,
+yet the answer proceeded as if it were.
+
+Write verdict_summary in the SAME language as the answer being criticized."""
+
+
+def _extract_json(text: str) -> dict:
+    """Robust JSON extraction: strips reasoning blocks, finds outermost braces."""
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"<reasoning>.*?</reasoning>", "", cleaned, flags=re.DOTALL)
+    if "```json" in cleaned:
+        cleaned = cleaned.split("```json")[1].split("```")[0]
+    elif "```" in cleaned:
+        parts = cleaned.split("```")
+        if len(parts) >= 2:
+            cleaned = parts[1]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        cleaned = cleaned[start:end + 1]
+    return json.loads(cleaned)
+
+
 class Director:
     def __init__(self):
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
-        
+
         settings = self.settings_manager.get_settings()
-        director_model = settings.get("director", {}).get("model", "llama-3.3-70b-versatile")
-        
-        self.groq_connector = GroqConnector(model_name=director_model)
+        self.director_model = settings.get("director", {}).get("model", "llama-3.3-70b-versatile")
+
+        self.groq_connector = GroqConnector(model_name=self.director_model)
         self.openrouter_connector = OpenRouterConnector()
-        # Fallback to Groq if OpenRouter key is missing
         if not os.getenv("OPENROUTER_API_KEY"):
             self.openrouter_connector = self.groq_connector
-            
+
+        # Critic must be a DIFFERENT mind than the director.
+        if "gpt-oss" in self.director_model or "qwen3" in self.director_model:
+            self.critic_connector = GroqConnector(model_name="llama-3.3-70b-versatile")
+        else:
+            self.critic_connector = GroqConnector(model_name="openai/gpt-oss-120b")
+
         self.orchestrator = Orchestrator()
 
     def analyze_task(self, task: str) -> dict:
@@ -114,27 +152,20 @@ class Director:
             settings = self.settings_manager.get_settings()
             temperature = settings.get("director", {}).get("temperature", 0.3)
             max_tokens = settings.get("director", {}).get("max_tokens", 4096)
-            
+
             response = self.groq_connector.complete(
                 system_prompt=DIRECTOR_SYSTEM_PROMPT,
                 user_message=f"Analyze this task: {task}",
                 temperature=temperature,
                 max_tokens=max_tokens
             )
-            
-            # Extract JSON from response
-            json_str = response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0].strip()
-                
-            return json.loads(json_str)
+            return _extract_json(response)
         except Exception as e:
             return {
                 "error": str(e),
                 "surface_question": task,
                 "real_question": task,
+                "missing_input": False,
                 "problem_level": 1,
                 "pattern": "A",
                 "agents": [{"name": "DefaultWorker", "role": "Generalist", "sub_question_id": 1, "perspective": "General", "bias": "None", "speed": "fast"}],
@@ -146,18 +177,16 @@ class Director:
         for agent_data in plan.get("agents", []):
             sub_q_id = agent_data.get("sub_question_id", 1)
             sub_q = next((sq["question"] for sq in plan.get("sub_questions", []) if sq.get("id") == sub_q_id), "Unknown question")
-            
-            # Determine connector based on speed
+
             speed = agent_data.get("speed", "fast")
-            
-            # Lookup worker config
+
             settings = self.settings_manager.get_settings()
             workers_config = settings.get("workers", {})
             worker_type = "fast" if speed == "fast" else "deep_analytical"
-            
+
             provider = "groq"
             model_name = "llama-3.3-70b-versatile"
-            
+
             if worker_type in workers_config:
                 provider = workers_config[worker_type].get("provider", provider)
                 model_name = workers_config[worker_type].get("model", model_name)
@@ -165,14 +194,14 @@ class Director:
                 if speed != "fast":
                     provider = "openrouter"
                     model_name = "qwen/qwen-72b-chat"
-            
+
             if provider == "groq":
                 connector = GroqConnector(model_name=model_name)
             else:
                 connector = OpenRouterConnector(model_name=model_name)
                 if not os.getenv("OPENROUTER_API_KEY"):
                     connector = self.groq_connector
-            
+
             worker = Worker(
                 name=agent_data.get("name", f"Agent_{sub_q_id}"),
                 role=agent_data.get("role", "Analyst"),
@@ -197,15 +226,15 @@ class Director:
                 self.orchestrator.run_debate(workers[0], workers[1], memory)
             else:
                 self.orchestrator.run_pipeline(workers, memory)
-        else: # D or Hybrid
+        else:
             self.orchestrator.run_hybrid(plan, workers, memory)
 
     def _synthesize(self, memory: SharedMemory):
         memory.status = "synthesizing"
         memory.save_to_file()
-        
+
         findings_text = "\n\n".join([f"{f['agent_name']}: {f['response']}" for f in memory.findings])
-        
+
         prompt = f"""Synthesize the final answer based on the following findings.
 Original Task: {memory.task_original}
 Real Question: {memory.task_real}
@@ -213,7 +242,7 @@ Real Question: {memory.task_real}
 Findings:
 {findings_text}
 
-Provide a comprehensive, unified final answer. Note any contradictions and how you resolved them. / قدم إجابة نهائية شاملة وموحدة. اذكر أي تناقضات وكيف قمت بحلها."""
+Provide a comprehensive, unified final answer. Note any contradictions and how you resolved them. If the findings indicate that required material was missing, say so plainly instead of inventing content. / قدم إجابة نهائية شاملة وموحدة. اذكر أي تناقضات وكيف قمت بحلها. إذا أشارت النتائج إلى أن مادة مطلوبة كانت مفقودة، صرّح بذلك بوضوح بدلاً من اختلاق محتوى."""
 
         settings = self.settings_manager.get_settings()
         temperature = settings.get("director", {}).get("temperature", 0.3)
@@ -225,62 +254,87 @@ Provide a comprehensive, unified final answer. Note any contradictions and how y
             temperature=temperature,
             max_tokens=max_tokens
         )
-        memory.final_synthesis = response
-        
-        # Calculate final confidence based on average of findings
+        memory.final_synthesis = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+
+    def _critic(self, memory: SharedMemory):
+        """Adversarial critic: a DIFFERENT model attacks the answer, then confidence is recalibrated."""
+        prompt = f"""Task (real question): {memory.task_real}
+
+Answer to attack:
+{memory.final_synthesis}
+
+Attack this answer. Find every real weakness."""
+
+        base_confidence = 50.0
         if memory.findings:
-            memory.confidence_final = sum(f.get("confidence", 0) for f in memory.findings) / len(memory.findings)
-        else:
-            memory.confidence_final = 50.0
+            base_confidence = sum(f.get("confidence", 0) for f in memory.findings) / len(memory.findings)
 
-    def _stress_test(self, memory: SharedMemory):
-        prompt = f"""Stress test this synthesized answer.
-Task: {memory.task_real}
-Answer: {memory.final_synthesis}
+        try:
+            response = self.critic_connector.complete(
+                system_prompt=CRITIC_SYSTEM_PROMPT,
+                user_message=prompt,
+                temperature=0.2,
+                max_tokens=2048
+            )
+            verdict = _extract_json(response)
 
-Find any logical flaws, missing elements, or weaknesses in this answer. / ابحث عن أي عيوب منطقية، عناصر مفقودة، أو نقاط ضعف في هذه الإجابة."""
+            severity = float(verdict.get("severity", 5))
+            severity = max(0.0, min(10.0, severity))
+            fabrication = bool(verdict.get("fabrication_detected", False))
+            ignored_missing = bool(verdict.get("missing_information_ignored", False))
 
-        response = self.groq_connector.complete(
-            system_prompt="You are a critical stress-tester.",
-            user_message=prompt,
-            temperature=0.2,
-            max_tokens=2048
-        )
-        memory.stress_test_results = response
+            adjusted = base_confidence * (1.0 - severity / 15.0)
+            if fabrication or ignored_missing:
+                adjusted = min(adjusted, 20.0)
+            if memory.findings and min(f.get("confidence", 100) for f in memory.findings) < 20:
+                adjusted = min(adjusted, 25.0)
+
+            memory.confidence_final = round(max(0.0, min(100.0, adjusted)), 1)
+
+            flaws = verdict.get("flaws", [])
+            flaws_text = "\n".join(f"- {fl}" for fl in flaws) if flaws else "-"
+            memory.stress_test_results = (
+                f"CRITIC MODEL: {getattr(self.critic_connector, 'model_name', 'unknown')}\n"
+                f"SEVERITY: {severity}/10\n"
+                f"FABRICATION: {fabrication}\n"
+                f"MISSING INFO IGNORED: {ignored_missing}\n"
+                f"FLAWS:\n{flaws_text}\n"
+                f"STRONGEST COUNTERARGUMENT: {verdict.get('strongest_counterargument', '')}\n"
+                f"VERDICT: {verdict.get('verdict_summary', '')}"
+            )
+        except Exception as e:
+            memory.confidence_final = round(base_confidence, 1)
+            memory.stress_test_results = f"Critic failed / فشل الناقد: {str(e)}"
 
     def run(self, task: str, memory: SharedMemory):
         try:
             memory.status = "running"
             memory.save_to_file()
-            
-            # Stage 0-5
+
             plan = self.analyze_task(task)
-            
+
             memory.task_real = plan.get("real_question", task)
             memory.problem_level = plan.get("problem_level", 1)
             memory.agents_plan = plan.get("agents", [])
             memory.conversation_pattern = plan.get("pattern", "A")
             memory.save_to_file()
-            
-            # Apply system constraints
+
             settings = self.settings_manager.get_settings()
             max_agents = settings.get("system", {}).get("max_agents_per_task", 6)
-            
-            # Stage 6: Build and Execute
+
             workers = self._build_workers(plan, memory)
             if len(workers) > max_agents:
                 workers = workers[:max_agents]
-                
+
             self._execute_pattern(plan.get("pattern", "A"), plan, workers, memory)
-            
-            # Stage 7: Synthesize and Stress Test
+
             self._synthesize(memory)
-            self._stress_test(memory)
-            
+            self._critic(memory)
+
             memory.status = "complete"
             memory.completed_at = datetime.now().isoformat()
             memory.save_to_file()
-            
+
         except Exception as e:
             memory.status = "failed"
             memory.final_synthesis = f"Error during execution / خطأ أثناء التنفيذ: {str(e)}"
