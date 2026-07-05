@@ -102,9 +102,19 @@ Set fabrication_detected to true if the answer invents facts,
 describes content it was never given, or expresses confidence
 without evidence.
 
-Set missing_information_ignored to true if the task referenced
-material (files, data, links) that was clearly not available,
-yet the answer proceeded as if it were.
+Set missing_information_ignored to true ONLY if the task referenced
+specific material (an attached file, a dataset, a link) that was
+not available, AND the answer proceeded to analyze it as if it
+existed. If the answer explicitly acknowledged the missing material
+and refused to invent its contents, this must be false.
+General scarcity of data in the world is NOT missing information.
+
+Calibration rule for severity: use the FULL range. An honest,
+well-structured answer with minor gaps deserves 2-3. Reserve 6+
+for real logical failures. Giving every answer the same score
+is itself a failure of your job. Before finalizing, ask yourself:
+is this score genuinely different from what I would give a much
+better or much worse answer?
 
 Write verdict_summary in the SAME language as the answer being criticized."""
 
