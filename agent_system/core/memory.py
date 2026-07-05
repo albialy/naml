@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
-import json
-import os
 from typing import List, Dict, Any, Optional
+from agent_system.core.storage import get_storage
 
 class SharedMemory:
     def __init__(self, task_original: str, user_id: str = ""):
@@ -61,11 +60,9 @@ class SharedMemory:
         }
 
     def save_to_file(self):
-        storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'storage', 'sessions')
-        os.makedirs(storage_dir, exist_ok=True)
-        file_path = os.path.join(storage_dir, f"{self.session_id}.json")
+        """Persist via the storage layer (backend-agnostic).
+        Method name kept for backward compatibility with all callers."""
         try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
+            get_storage().save_session(self.to_dict())
         except Exception as e:
             print(f"Error saving session / خطأ في حفظ الجلسة: {e}")
