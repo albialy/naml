@@ -131,8 +131,8 @@ class Director:
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
 
-        settings = self.settings_manager.get_settings()
-        self.director_model = settings.get("director", {}).get("model", "llama-3.3-70b-versatile")
+        # EXPERIMENT: director pinned to reasoning model (bypasses stored settings)
+        self.director_model = "openai/gpt-oss-120b"
 
         self.groq_connector = GroqConnector(model_name=self.director_model)
         self.openrouter_connector = OpenRouterConnector()
@@ -141,7 +141,7 @@ class Director:
 
         # Critic must be a DIFFERENT mind than the director.
         if "gpt-oss" in self.director_model or "qwen3" in self.director_model:
-            self.director_model = "openai/gpt-oss-120b"
+            self.critic_connector = GroqConnector(model_name="llama-3.3-70b-versatile")
         else:
             self.critic_connector = GroqConnector(model_name="openai/gpt-oss-120b")
 
