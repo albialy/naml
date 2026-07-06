@@ -140,22 +140,25 @@ class Director:
     def __init__(self):
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
-
-        # EXPERIMENT: director pinned to reasoning model (bypasses stored settings)
-        self.director_model = "openai/gpt-oss-120b"
-
-        self.groq_connector = GroqConnector(model_name=self.director_model)
         self.openrouter_connector = OpenRouterConnector()
-        if not os.getenv("OPENROUTER_API_KEY"):
-            self.openrouter_connector = self.groq_connector
-
-        # Critic must be a DIFFERENT mind than the director.
-        if "gpt-oss" in self.director_model or "qwen3" in self.director_model:
-            self.critic_connector = GroqConnector(model_name="llama-3.3-70b-versatile")
-        else:
-            self.critic_connector = GroqConnector(model_name="openai/gpt-oss-120b")
-
         self.orchestrator = Orchestrator()
+
+    # ---- Live model resolution: reads settings on EVERY call ----
+    # This is what makes the admin dropdown take effect instantly,
+    # without any server restart.
+    def _director_model(self) -> str:
+        settings = self.settings_manager.get_settings()
+        return settings.get("director", {}).get("model", "llama-3.3-70b-versatile")
+
+    def _director_connector(self) -> GroqConnector:
+        return GroqConnector(model_name=self._director_model())
+
+    def _critic_connector_live(self) -> GroqConnector:
+        """Critic must always be a DIFFERENT mind than the director."""
+        model = self._director_model()
+        if "gpt-oss" in model or "qwen3" in model:
+            return GroqConnector(model_name="llama-3.3-70b-versatile")
+        return GroqConnector(model_name="openai/gpt-oss-20b")
 
     def analyze_task(self, task: str) -> dict:
         try:
@@ -163,7 +166,7 @@ class Director:
             temperature = settings.get("director", {}).get("temperature", 0.3)
             max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
-            response = self.groq_connector.complete(
+            response = self._director_connector().complete(
                 system_prompt=DIRECTOR_SYSTEM_PROMPT,
                 user_message=f"Analyze this task: {task}",
                 temperature=temperature,
@@ -210,7 +213,7 @@ class Director:
             else:
                 connector = OpenRouterConnector(model_name=model_name)
                 if not os.getenv("OPENROUTER_API_KEY"):
-                    connector = self.groq_connector
+                    connector = self._director_connector()
 
             worker = Worker(
                 name=agent_data.get("name", f"Agent_{sub_q_id}"),
@@ -258,7 +261,7 @@ Provide a comprehensive, unified final answer. Note any contradictions and how y
         temperature = settings.get("director", {}).get("temperature", 0.3)
         max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
-        response = self.groq_connector.complete(
+        response = self._director_connector().complete(
             system_prompt="You are the lead synthesizer. Combine multiple perspectives into one coherent final answer.\n\nCRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the original task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.",
             user_message=prompt,
             temperature=temperature,
@@ -279,8 +282,9 @@ Attack this answer. Find every real weakness."""
         if memory.findings:
             base_confidence = sum(f.get("confidence", 0) for f in memory.findings) / len(memory.findings)
 
+        critic = self._critic_connector_live()
         try:
-            response = self.critic_connector.complete(
+            response = critic.complete(
                 system_prompt=CRITIC_SYSTEM_PROMPT,
                 user_message=prompt,
                 temperature=0.2,
@@ -304,7 +308,7 @@ Attack this answer. Find every real weakness."""
             flaws = verdict.get("flaws", [])
             flaws_text = "\n".join(f"- {fl}" for fl in flaws) if flaws else "-"
             memory.stress_test_results = (
-                f"CRITIC MODEL: {getattr(self.critic_connector, 'model_name', 'unknown')}\n"
+                f"CRITIC MODEL: {getattr(critic, 'model_name', 'unknown')}\n"
                 f"SEVERITY: {severity}/10\n"
                 f"FABRICATION: {fabrication}\n"
                 f"MISSING INFO IGNORED: {ignored_missing}\n"
