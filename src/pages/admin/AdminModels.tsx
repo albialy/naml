@@ -19,6 +19,9 @@ export function AdminModels() {
   const [addingWorker, setAddingWorker] = useState(false);
   const [newWorkerForm, setNewWorkerForm] = useState({ name: '', provider: '', model: '', temperature: 0.5, max_tokens: 2048 });
 
+  const [editingDirector, setEditingDirector] = useState(false);
+  const [directorForm, setDirectorForm] = useState({ provider: 'groq', model: '', temperature: 0.3, max_tokens: 4096 });
+
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: async () => {
@@ -77,6 +80,16 @@ export function AdminModels() {
     }
   });
 
+  const updateDirector = useMutation({
+    mutationFn: async (data: any) => {
+      await apiClient.put(endpoints.admin.settingsDirector, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      setEditingDirector(false);
+    }
+  });
+
   if (!settings) return <div className="py-20 text-center">جاري التحميل...</div>;
 
   return (
@@ -130,21 +143,76 @@ export function AdminModels() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>النموذج الموجه (Director)</CardTitle>
+          {!editingDirector && (
+            <Button variant="outline" size="sm" onClick={() => {
+              setEditingDirector(true);
+              setDirectorForm({
+                provider: settings.director?.provider || 'groq',
+                model: settings.director?.model || '',
+                temperature: settings.director?.temperature ?? 0.3,
+                max_tokens: settings.director?.max_tokens ?? 4096
+              });
+            }}>
+              تعديل
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          <div className="text-[#888888] mb-4">هذا النموذج مسؤول عن تخطيط المهام وتلخيص النتائج.</div>
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div className="bg-[#1A1A1A] p-4 rounded-lg border border-[#1E1E1E]">
-              <div className="text-xs text-[#888888] mb-1">المزود</div>
-              <div className="font-medium capitalize">{settings.director?.provider}</div>
+          <div className="text-[#888888] mb-4">هذا النموذج مسؤول عن تخطيط المهام وتلخيص النتائج. التغيير يسري فوراً على التحليلات الجديدة.</div>
+          {editingDirector ? (
+            <div className="bg-[#1A1A1A] p-4 rounded-lg border border-[#F5A623] space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <select
+                  className="flex h-10 w-full rounded-md border border-[#1E1E1E] bg-[#111111] px-3 py-2 text-sm text-white"
+                  value={directorForm.provider}
+                  onChange={e => setDirectorForm({...directorForm, provider: e.target.value, model: ''})}
+                >
+                  <option value="groq">Groq</option>
+                  <option value="openrouter">OpenRouter</option>
+                </select>
+                <select
+                  className="flex h-10 w-full rounded-md border border-[#1E1E1E] bg-[#111111] px-3 py-2 text-sm text-white"
+                  value={directorForm.model}
+                  onChange={e => setDirectorForm({...directorForm, model: e.target.value})}
+                >
+                  <option value="">اختر النموذج</option>
+                  {directorForm.provider && availableModels?.[directorForm.provider]?.map((m: string) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+                <Input
+                  type="number" step="0.1" max="1" min="0" placeholder="Temperature"
+                  value={directorForm.temperature}
+                  onChange={e => setDirectorForm({...directorForm, temperature: parseFloat(e.target.value)})}
+                />
+                <Input
+                  type="number" placeholder="Max Tokens"
+                  value={directorForm.max_tokens}
+                  onChange={e => setDirectorForm({...directorForm, max_tokens: parseInt(e.target.value)})}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="ghost" size="sm" onClick={() => setEditingDirector(false)}>إلغاء</Button>
+                <Button size="sm" onClick={() => updateDirector.mutate(directorForm)} isLoading={updateDirector.isPending} disabled={!directorForm.model} className="gap-2">
+                  <Save className="w-4 h-4" />
+                  حفظ
+                </Button>
+              </div>
             </div>
-            <div className="bg-[#1A1A1A] p-4 rounded-lg border border-[#1E1E1E]">
-              <div className="text-xs text-[#888888] mb-1">النموذج</div>
-              <div className="font-medium">{settings.director?.model}</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="bg-[#1A1A1A] p-4 rounded-lg border border-[#1E1E1E]">
+                <div className="text-xs text-[#888888] mb-1">المزود</div>
+                <div className="font-medium capitalize">{settings.director?.provider}</div>
+              </div>
+              <div className="bg-[#1A1A1A] p-4 rounded-lg border border-[#1E1E1E]">
+                <div className="text-xs text-[#888888] mb-1">النموذج</div>
+                <div className="font-medium">{settings.director?.model}</div>
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
       
