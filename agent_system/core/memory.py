@@ -21,12 +21,13 @@ class SharedMemory:
         self.created_at: str = datetime.now().isoformat()
         self.completed_at: Optional[str] = None
 
-    def add_finding(self, agent_name: str, sub_question: str, response: str, confidence: float):
+    def add_finding(self, agent_name: str, sub_question: str, response: str, confidence: float, pheromone: str = ""):
         self.findings.append({
             "agent_name": agent_name,
             "sub_question": sub_question,
             "response": response,
             "confidence": confidence,
+            "pheromone": pheromone,
             "timestamp": datetime.now().isoformat()
         })
         self.save_to_file()
