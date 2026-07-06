@@ -1,5 +1,20 @@
+import re
 from agent_system.core.connectors.base import BaseConnector
 from agent_system.core.memory import SharedMemory
+
+
+def _extract_pheromone(text: str) -> str:
+    """Extract the structured pheromone block a worker emits at the end
+    of its answer. Falls back to a truncated response if missing."""
+    match = re.search(r"===PHEROMONE===(.*?)(?:===END===|$)", text, flags=re.DOTALL)
+    if match:
+        block = match.group(1).strip()
+        if block:
+            return block
+    # Fallback: first 250 chars as a crude scent
+    cleaned = text.strip()
+    return (cleaned[:250] + "…") if len(cleaned) > 250 else cleaned
+
 
 class Worker:
     def __init__(self, name: str, role: str, sub_question: str, perspective: str, bias_warning: str, speed: str, connector: BaseConnector, shared_memory: SharedMemory):
@@ -11,19 +26,25 @@ class Worker:
         self.speed = speed
         self.connector = connector
         self.shared_memory = shared_memory
-        
+
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
 
     def _build_context(self) -> str:
+        """PHEROMONE PROTOCOL: pass only concentrated pheromones from
+        previous agents, never their full raw responses. This prevents
+        the context snowball (each agent re-reading all history) and
+        cuts input tokens drastically — like real ants reading scent
+        trails, not each other's biographies."""
         if not self.shared_memory.findings:
             return "No previous findings yet. / لا توجد نتائج سابقة بعد."
-        
+
         context_parts = []
         for finding in self.shared_memory.findings:
             if finding["agent_name"] != self.name:
+                scent = finding.get("pheromone") or _extract_pheromone(finding.get("response", ""))
                 context_parts.append(
-                    f"Agent {finding['agent_name']} answered '{finding['sub_question']}':\n{finding['response']}"
+                    f"[Pheromone from {finding['agent_name']} | confidence {finding.get('confidence', '?')}%]\n{scent}"
                 )
         return "\n\n".join(context_parts)
 
@@ -40,7 +61,7 @@ REAL QUESTION: {self.shared_memory.task_real}
 Your specific sub-question:
 {self.sub_question}
 
-Context from previous agents:
+Pheromone trail from previous agents (concentrated findings, not full texts):
 {self._build_context()}
 
 Rules:
@@ -51,24 +72,31 @@ Rules:
 5. Base every claim only on information actually present in the task and the context above. If you are speculating, say so explicitly.
 6. End with: CONFIDENCE: [0-100]% (be honest: use low confidence when information is missing)
 7. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
-8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language."""
+8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.
+9. PHEROMONE RULE (mandatory): You MUST end your entire response with this exact block (content in the task's language, each line ONE short sentence):
+===PHEROMONE===
+DISCOVERY: [your single most important finding]
+EVIDENCE: [what it rests on]
+GAPS: [what you could not answer]
+HANDOFF: [what the next agent most needs to know]
+===END==="""
 
         user_message = f"Please answer your sub-question: {self.sub_question}"
-        
+
         settings = self.settings_manager.get_settings()
         workers_config = settings.get("workers", {})
-        
+
         temperature = 0.8 if self.speed == "fast" else 0.2
         max_tokens = 2048 if self.speed == "fast" else 4096
-        
+
         worker_type = "fast" if self.speed == "fast" else "deep_analytical"
         if worker_type in workers_config:
             temperature = workers_config[worker_type].get("temperature", temperature)
             max_tokens = workers_config[worker_type].get("max_tokens", max_tokens)
-        
+
         try:
             response = self.connector.complete(system_prompt, user_message, temperature, max_tokens)
-            
+
             confidence = 80.0
             if "CONFIDENCE:" in response.upper():
                 try:
@@ -76,10 +104,11 @@ Rules:
                     confidence = float(conf_str)
                 except:
                     pass
-                    
-            self.shared_memory.add_finding(self.name, self.sub_question, response, confidence)
+
+            pheromone = _extract_pheromone(response)
+            self.shared_memory.add_finding(self.name, self.sub_question, response, confidence, pheromone)
             return response
         except Exception as e:
             error_response = f"Worker {self.name} failed / فشل العامل: {str(e)}"
-            self.shared_memory.add_finding(self.name, self.sub_question, error_response, 0.0)
+            self.shared_memory.add_finding(self.name, self.sub_question, error_response, 0.0, error_response)
             return error_response
