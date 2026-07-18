@@ -11,13 +11,12 @@ def _extract_pheromone(text: str) -> str:
         block = match.group(1).strip()
         if block:
             return block
-    # Fallback: first 250 chars as a crude scent
     cleaned = text.strip()
     return (cleaned[:250] + "…") if len(cleaned) > 250 else cleaned
 
 
 class Worker:
-    def __init__(self, name: str, role: str, sub_question: str, perspective: str, bias_warning: str, speed: str, connector: BaseConnector, shared_memory: SharedMemory):
+    def __init__(self, name: str, role: str, sub_question: str, perspective: str, bias_warning: str, speed: str, connector: BaseConnector, shared_memory: SharedMemory, web_enabled: bool = False):
         self.name = name
         self.role = role
         self.sub_question = sub_question
@@ -26,16 +25,14 @@ class Worker:
         self.speed = speed
         self.connector = connector
         self.shared_memory = shared_memory
+        self.web_enabled = web_enabled
 
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
 
     def _build_context(self) -> str:
         """PHEROMONE PROTOCOL: pass only concentrated pheromones from
-        previous agents, never their full raw responses. This prevents
-        the context snowball (each agent re-reading all history) and
-        cuts input tokens drastically — like real ants reading scent
-        trails, not each other's biographies."""
+        previous agents, never their full raw responses."""
         if not self.shared_memory.findings:
             return "No previous findings yet. / لا توجد نتائج سابقة بعد."
 
@@ -49,6 +46,17 @@ class Worker:
         return "\n\n".join(context_parts)
 
     def execute(self) -> str:
+        web_rules = ""
+        if self.web_enabled:
+            web_rules = """
+SPECIAL CAPABILITY - LIVE WEB ACCESS:
+You have a built-in live web search tool that activates automatically.
+- USE it to fetch current, real information for your sub-question.
+- CITE the source name and date for every fact you bring from the web
+  (e.g., "according to FIFA.com, Dec 2022...").
+- If search returns nothing useful, say so honestly instead of guessing.
+- Never present a web-sourced claim without attribution."""
+
         system_prompt = f"""You are {self.name}.
 Your role: {self.role}
 Your unique perspective: {self.perspective}
@@ -63,13 +71,13 @@ Your specific sub-question:
 
 Pheromone trail from previous agents (concentrated findings, not full texts):
 {self._build_context()}
-
+{web_rules}
 Rules:
 1. Answer only your sub-question.
 2. Do not repeat what previous agents said.
 3. Add only what your perspective uniquely sees.
-4. ANTI-HALLUCINATION RULE (most important): If the task refers to something you cannot actually see or that was not provided to you (an attached file, a document, data, an image, a link, or any missing context), you MUST NOT invent or imagine its contents. Do not describe what the file might contain or could include. Instead, state clearly and honestly that the referenced material was not provided to you, and set your confidence very low, below 20. Refusing to fabricate is a success, not a failure.
-5. Base every claim only on information actually present in the task and the context above. If you are speculating, say so explicitly.
+4. ANTI-HALLUCINATION RULE (most important): If the task refers to material that was not provided to you (an attached file, a document, an image), you MUST NOT invent or imagine its contents. State clearly that the referenced material was not provided, and set your confidence very low, below 20. Refusing to fabricate is a success, not a failure.
+5. Base every claim only on information actually present in the task, the context above, or (if you have web access) verifiable web sources you cite. If you are speculating, say so explicitly.
 6. End with: CONFIDENCE: [0-100]% (be honest: use low confidence when information is missing)
 7. End with: WHAT I MIGHT HAVE MISSED: [honest reflection]
 8. CRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.
@@ -93,6 +101,11 @@ HANDOFF: [what the next agent most needs to know]
         if worker_type in workers_config:
             temperature = workers_config[worker_type].get("temperature", temperature)
             max_tokens = workers_config[worker_type].get("max_tokens", max_tokens)
+
+        if self.web_enabled:
+            # Built-in tools consume tokens; give researchers breathing room
+            max_tokens = max(max_tokens, 3072)
+            temperature = min(temperature, 0.3)
 
         try:
             response = self.connector.complete(system_prompt, user_message, temperature, max_tokens)
