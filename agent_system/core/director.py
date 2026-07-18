@@ -20,11 +20,18 @@ all seven stages. No exceptions.
 
 CRITICAL HONESTY RULE:
 If the task refers to material that was not provided
-(an attached file, a document, data, an image, a link),
+(an attached FILE, a DOCUMENT, an IMAGE the user mentions attaching),
 do NOT plan agents to imagine its contents.
-Set "missing_input" to true and describe what is missing
-in "missing_description". Keep agents minimal (one agent
-whose job is to state clearly what is needed).
+Set "missing_input" to true and describe what is missing.
+
+WEB RESEARCH CAPABILITY:
+Live web search IS available. If a sub-question requires current,
+real-world, or up-to-date information from the internet (news, stats,
+prices, events, sports results, market data), set "needs_web": true
+for that agent. Needing internet information is NOT missing input —
+plan researcher agents for it instead of refusing.
+Use web researchers only where live facts are genuinely needed;
+reasoning-only sub-questions should keep "needs_web": false.
 
 STAGE 0 - DECONSTRUCT THE REQUEST:
 List every hidden assumption.
@@ -70,7 +77,8 @@ Respond only in valid JSON matching this structure:
       "sub_question_id": 1,
       "perspective": "",
       "bias": "",
-      "speed": "fast|deep"
+      "speed": "fast|deep",
+      "needs_web": false
     }
   ],
   "pattern": "A|B|C|D",
@@ -208,7 +216,12 @@ class Director:
                     provider = "openrouter"
                     model_name = "qwen/qwen-72b-chat"
 
-            if provider == "groq":
+            needs_web = bool(agent_data.get("needs_web", False))
+            if needs_web:
+                # Researcher: Groq compound-mini with built-in live web search.
+                # Separate TPM bucket from director/worker models.
+                connector = GroqConnector(model_name="groq/compound-mini")
+            elif provider == "groq":
                 connector = GroqConnector(model_name=model_name)
             else:
                 connector = OpenRouterConnector(model_name=model_name)
@@ -223,7 +236,8 @@ class Director:
                 bias_warning=agent_data.get("bias", "None"),
                 speed=agent_data.get("speed", "fast"),
                 connector=connector,
-                shared_memory=memory
+                shared_memory=memory,
+                web_enabled=needs_web
             )
             workers.append(worker)
         return workers
