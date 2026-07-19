@@ -1,6 +1,6 @@
 import os
 from groq import Groq
-from agent_system.core.connectors.base import BaseConnector
+from .base import BaseConnector
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,27 +26,32 @@ class GroqConnector(BaseConnector):
         if not self.client:
             return False
         try:
-            # Simple test to validate
             self.client.models.list()
             return True
         except Exception as e:
             logger.error(f"Groq connection validation failed: {e} / فشل التحقق من اتصال Groq")
             return False
 
-    def complete(self, system_prompt: str, user_message: str, temperature: float, max_tokens: int) -> str:
+    def complete(self, system_prompt: str, user_message: str, temperature=None, max_tokens=None) -> str:
+        """Params are OPTIONAL: pass None to omit them from the request.
+        Compound systems reject some params with a misleading 413, so web
+        researcher calls send only what is strictly needed."""
         if not self.client:
             return "Error: Groq client not initialized / خطأ: لم يتم تهيئة عميل Groq"
-            
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_message})
+
+        kwargs = {"messages": messages, "model": self.model_name}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+
         try:
-            response = self.client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
-                model=self.model_name,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
+            response = self.client.chat.completions.create(**kwargs)
             return response.choices[0].message.content
         except Exception as e:
             error_msg = str(e).lower()
@@ -54,6 +59,8 @@ class GroqConnector(BaseConnector):
                 return f"Authentication error / خطأ في المصادقة: {e}"
             elif "rate limit" in error_msg or "429" in error_msg:
                 return f"Rate limit error / خطأ في حد المعدل: {e}"
+            elif "request_too_large" in error_msg or "413" in error_msg:
+                return f"Network or API error / خطأ في الشبكة أو واجهة برمجة التطبيقات: {e}"
             elif "not found" in error_msg or "model" in error_msg:
                 return f"Model not found error / خطأ: النموذج غير موجود: {e}"
             else:
