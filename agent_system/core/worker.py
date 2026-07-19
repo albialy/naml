@@ -96,21 +96,21 @@ HANDOFF: [what the next agent most needs to know]
 ===END==="""
 
     def _lean_web_prompt(self) -> str:
-        """Compact prompt for web researchers on compound models.
-        compound-mini has a small per-request size cap (413 request_too_large),
-        so this prompt is deliberately minimal."""
-        return f"""You are {self.name}, a web researcher with LIVE web search built in.
+        """One-line system for compound (long system + search can trigger 413)."""
+        return f"You are {self.name}, a web researcher. Respond in the same language as the task."
 
-TASK CONTEXT: {self.shared_memory.task_real}
+    def _web_user_message(self) -> str:
+        """All researcher instructions live in the USER message for compound."""
+        return f"""TASK CONTEXT: {self.shared_memory.task_real}
 
-YOUR RESEARCH QUESTION:
+YOUR RESEARCH QUESTION (answer ONLY this, narrowly):
 {self.sub_question}
 
 Rules:
-1. USE your live web search to answer with current, real facts.
+1. USE your live web search. Bring current, real facts only.
 2. CITE source name and date for every fact (e.g., "FIFA.com, 15 July 2026").
 3. If search finds nothing useful, say so honestly. Never guess live facts.
-4. Respond in the SAME language as the task. Never mix languages.
+4. Respond in the SAME language as the task context above.
 5. End with: CONFIDENCE: [0-100]%
 6. Then end with this exact block (task's language, one short line each):
 ===PHEROMONE===
@@ -120,8 +120,12 @@ GAPS: [what you could not find]
 HANDOFF: [what the next agent needs]
 ===END==="""
 
-    def _call(self, prompt: str, temperature: float, max_tokens: int) -> str:
+    def _call(self, prompt: str, temperature, max_tokens) -> str:
         return self.connector.complete(prompt, f"Answer your research/sub question now: {self.sub_question}", temperature, max_tokens)
+
+    def _call_web(self, max_tokens: int) -> str:
+        # Compound: minimal system, instructions in user message, NO temperature
+        return self.connector.complete(self._lean_web_prompt(), self._web_user_message(), None, max_tokens)
 
     def execute(self) -> str:
         settings = self.settings_manager.get_settings()
@@ -137,12 +141,11 @@ HANDOFF: [what the next agent needs]
 
         try:
             if self.web_enabled:
-                # Lean request to stay under compound's per-request size cap
-                response = self._call(self._lean_web_prompt(), 0.3, 1500)
+                # Compound quirks: no temperature, tiny system, narrow question
+                response = self._call_web(1500)
                 if _is_error_response(response):
-                    # One smaller retry after a short breath
                     time.sleep(2)
-                    response = self._call(self._lean_web_prompt(), 0.3, 1024)
+                    response = self._call_web(1024)
             else:
                 response = self._call(self._full_prompt(), temperature, max_tokens)
 
