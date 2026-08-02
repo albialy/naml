@@ -32,6 +32,8 @@ for that agent. Needing internet information is NOT missing input —
 plan researcher agents for it instead of refusing.
 Use web researchers only where live facts are genuinely needed;
 reasoning-only sub-questions should keep "needs_web": false.
+Give each web researcher a narrow, specific research question
+(one fact-set per researcher, not everything at once).
 
 STAGE 0 - DECONSTRUCT THE REQUEST:
 List every hidden assumption.
@@ -218,9 +220,9 @@ class Director:
 
             needs_web = bool(agent_data.get("needs_web", False))
             if needs_web:
-                # Researcher: Groq compound-mini with built-in live web search.
-                # Separate TPM bucket from director/worker models.
-                connector = GroqConnector(model_name="groq/compound-mini")
+                # Researcher: NAML's own search layer (free Python search),
+                # llama only synthesizes the evidence. No compound, no collisions.
+                connector = GroqConnector(model_name="llama-3.3-70b-versatile")
             elif provider == "groq":
                 connector = GroqConnector(model_name=model_name)
             else:
