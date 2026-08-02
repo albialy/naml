@@ -1,6 +1,7 @@
 import re
 import time
 from agent_system.core.connectors.base import BaseConnector
+from agent_system.core.search_provider import get_search, format_evidence
 from agent_system.core.memory import SharedMemory
 
 # Connector error strings start with these (GroqConnector returns errors as text)
@@ -95,37 +96,8 @@ GAPS: [what you could not answer]
 HANDOFF: [what the next agent most needs to know]
 ===END==="""
 
-    def _lean_web_prompt(self) -> str:
-        """One-line system for compound (long system + search can trigger 413)."""
-        return f"You are {self.name}, a web researcher. Respond in the same language as the task."
-
-    def _web_user_message(self) -> str:
-        """All researcher instructions live in the USER message for compound."""
-        return f"""TASK CONTEXT: {self.shared_memory.task_real}
-
-YOUR RESEARCH QUESTION (answer ONLY this, narrowly):
-{self.sub_question}
-
-Rules:
-1. USE your live web search. Bring current, real facts only.
-2. CITE source name and date for every fact (e.g., "FIFA.com, 15 July 2026").
-3. If search finds nothing useful, say so honestly. Never guess live facts.
-4. Respond in the SAME language as the task context above.
-5. End with: CONFIDENCE: [0-100]%
-6. Then end with this exact block (task's language, one short line each):
-===PHEROMONE===
-DISCOVERY: [most important finding]
-EVIDENCE: [sources it rests on]
-GAPS: [what you could not find]
-HANDOFF: [what the next agent needs]
-===END==="""
-
     def _call(self, prompt: str, temperature, max_tokens) -> str:
         return self.connector.complete(prompt, f"Answer your research/sub question now: {self.sub_question}", temperature, max_tokens)
-
-    def _call_web(self, max_tokens: int) -> str:
-        # Compound: minimal system, instructions in user message, NO temperature
-        return self.connector.complete(self._lean_web_prompt(), self._web_user_message(), None, max_tokens)
 
     def execute(self) -> str:
         settings = self.settings_manager.get_settings()
@@ -141,11 +113,37 @@ HANDOFF: [what the next agent needs]
 
         try:
             if self.web_enabled:
-                # Compound quirks: no temperature, tiny system, narrow question
-                response = self._call_web(1500)
-                if _is_error_response(response):
-                    time.sleep(2)
-                    response = self._call_web(1024)
+                # NAML Reconnaissance: search runs in pure Python (zero tokens,
+                # zero rate-limit risk); only the synthesis call costs tokens.
+                results = get_search().search(self.sub_question, max_results=6)
+                if not results:
+                    response = "Web search returned no results / لم يرجع البحث أي نتائج"
+                else:
+                    evidence = format_evidence(results)
+                    synth_prompt = f"""You are {self.name}, a research synthesizer.
+
+TASK CONTEXT: {self.shared_memory.task_real}
+
+YOUR RESEARCH QUESTION:
+{self.sub_question}
+
+EVIDENCE FROM WEB SEARCH (numbered, with source domains):
+{evidence}
+
+Rules:
+1. Answer the research question using ONLY the evidence above.
+2. Cite evidence numbers and domains for every claim, e.g. [1](fifa.com).
+3. If the evidence does not answer the question, say so honestly.
+4. Respond in the SAME language as the task context.
+5. End with: CONFIDENCE: [0-100]%
+6. Then end with this exact block (task's language, one short line each):
+===PHEROMONE===
+DISCOVERY: [most important finding]
+EVIDENCE: [strongest sources by domain]
+GAPS: [what the evidence did not cover]
+HANDOFF: [what the next agent needs]
+===END==="""
+                    response = self.connector.complete(synth_prompt, "Synthesize your evidence-based answer now.", 0.2, 2048)
             else:
                 response = self._call(self._full_prompt(), temperature, max_tokens)
 
