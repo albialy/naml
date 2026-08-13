@@ -97,3 +97,19 @@ async def get_logs(current_user: User = Depends(require_super_admin)):
             return json.load(f)
     except:
         return []
+@router.get("/api/debug/search-test")
+async def debug_search_test(q: str = "Egypt earthquake 2026"):
+    """Temporary diagnostic endpoint - REMOVE after debugging."""
+    try:
+        from agent_system.core.search_provider import get_search
+        results = get_search().search(q)
+        return {
+            "query": q,
+            "count": len(results),
+            "results": [
+                {"score": r["score"], "domain": r["domain"], "title": r["title"][:80]}
+                for r in results
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
