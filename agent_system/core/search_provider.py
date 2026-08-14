@@ -14,7 +14,6 @@ from typing import List, Dict, Any
 from urllib.parse import urlparse
 
 
-# ----------------------- Trust heuristics (pencil rules) -----------------------
 HIGH_TRUST_DOMAINS = {
     "fifa.com", "un.org", "who.int", "worldbank.org",
     "bbc.com", "bbc.co.uk", "reuters.com", "apnews.com", "espn.com",
@@ -25,6 +24,19 @@ HIGH_TRUST_DOMAINS = {
 }
 LOW_TRUST_PATTERNS = ("blogspot.", "wordpress.com", ".info", "forumarabia", "answers.")
 
+TOPIC_TRUST_BOOST = {
+    ("earthquake", "زلزال", "seismic", "زلازل"): {
+        "earthquake.usgs.gov": 10.0, "usgs.gov": 9.0, "emsc.eu": 9.0,
+        "emsc-csem.org": 9.0, "nriag.sci.eg": 9.0,
+    },
+    ("world cup", "fifa", "كأس العالم", "مونديال"): {
+        "fifa.com": 10.0, "espn.com": 7.0, "transfermarkt.com": 6.0,
+    },
+    ("weather", "طقس", "temperature", "حرارة"): {
+        "accuweather.com": 8.0, "weather.com": 8.0,
+    },
+}
+
 
 def _domain(url: str) -> str:
     try:
@@ -34,15 +46,25 @@ def _domain(url: str) -> str:
         return ""
 
 
-def score_result(result: Dict[str, Any]) -> float:
-    """Cheap, token-free quality score. Higher = better.
-    Signals: domain trust tier, https, info density in snippet."""
+def _topic_boost(query: str, domain: str) -> float:
+    q_lower = query.lower()
+    boost = 0.0
+    for keywords, domain_boosts in TOPIC_TRUST_BOOST.items():
+        if any(kw in q_lower for kw in keywords):
+            for trusted_domain, weight in domain_boosts.items():
+                if domain == trusted_domain or domain.endswith("." + trusted_domain):
+                    boost = max(boost, weight)
+    return boost
+
+
+def score_result(result: Dict[str, Any], query: str = "") -> float:
     score = 0.0
     url = result.get("url", "")
     snippet = result.get("snippet", "") or ""
     dom = _domain(url)
 
-    # Domain tier
+    score += _topic_boost(query, dom)
+
     if any(dom == d or dom.endswith("." + d) for d in HIGH_TRUST_DOMAINS):
         score += 5.0
     if dom.endswith(".gov") or dom.endswith(".edu") or ".gov." in dom or ".edu." in dom:
@@ -50,11 +72,9 @@ def score_result(result: Dict[str, Any]) -> float:
     if any(p in url.lower() for p in LOW_TRUST_PATTERNS):
         score -= 4.0
 
-    # Transport
     if url.startswith("https://"):
         score += 0.5
 
-    # Info density: numbers, dates, proper length
     digits = len(re.findall(r"\d", snippet))
     score += min(digits * 0.15, 2.0)
     if re.search(r"\b(20\d{2}|19\d{2})\b", snippet):
@@ -65,20 +85,26 @@ def score_result(result: Dict[str, Any]) -> float:
     return score
 
 
-# ----------------------------- The contract -----------------------------------
-class SearchProvider(ABC):
-    """Every discovery backend fulfills this. Crawler comes later as one more class."""
+def _has_topic_authority(results: List[Dict[str, Any]], query: str) -> bool:
+    q_lower = query.lower()
+    for keywords, domain_boosts in TOPIC_TRUST_BOOST.items():
+        if any(kw in q_lower for kw in keywords):
+            trusted = set(domain_boosts.keys())
+            return any(
+                any(r["domain"] == d or r["domain"].endswith("." + d) for d in trusted)
+                for r in results
+            )
+    return True
 
+
+class SearchProvider(ABC):
     @abstractmethod
     def search(self, query: str, max_results: int = 6) -> List[Dict[str, Any]]:
-        """Return list of {title, url, snippet, domain, score}, best first."""
         ...
 
 
 class DuckDuckGoProvider(SearchProvider):
-    """Free, keyless, unlimited-enough. The pencil."""
-
-    def search(self, query: str, max_results: int = 6) -> List[Dict[str, Any]]:
+    def _raw_search(self, query: str, max_results: int) -> List[Dict[str, Any]]:
         from ddgs import DDGS
         raw = []
         for attempt in range(2):
@@ -98,14 +124,22 @@ class DuckDuckGoProvider(SearchProvider):
                 "snippet": (r.get("body") or r.get("snippet") or "").strip(),
                 "domain": _domain(url),
             }
-            item["score"] = score_result(item)
+            item["score"] = score_result(item, query)
             results.append(item)
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:max_results]
 
+    def search(self, query: str, max_results: int = 6) -> List[Dict[str, Any]]:
+        results = self._raw_search(query, max_results)
+        if results and not _has_topic_authority(results, query):
+            sharper_query = f"{query} official authoritative source"
+            retry_results = self._raw_search(sharper_query, max_results)
+            if _has_topic_authority(retry_results, query):
+                results = retry_results
+        return results
+
 
 def format_evidence(results: List[Dict[str, Any]]) -> str:
-    """Numbered evidence block the synthesizer cites from."""
     if not results:
         return ""
     lines = []
@@ -114,7 +148,6 @@ def format_evidence(results: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-# ------------------------------ Factory ----------------------------------------
 _provider = None
 
 
