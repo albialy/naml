@@ -132,9 +132,15 @@ EVIDENCE FROM WEB SEARCH (numbered, with source domains):
 
 Rules:
 1. Answer the research question using ONLY the evidence above.
-2. Cite evidence numbers and domains for every claim, e.g. [1](fifa.com).
-3. If the evidence does not answer the question, say so honestly.
-4. Respond in the SAME language as the task context.
+2. USE what the evidence actually shows, even if the sources are local
+   news sites rather than an ideal authority (e.g. USGS). A specific,
+   concrete claim from a named news outlet is real evidence — do not
+   dismiss it just because a more prestigious source wasn't found.
+   Only say "no evidence found" if the evidence list truly contains
+   nothing relevant to the question.
+3. Cite evidence numbers and domains for every claim, e.g. [1](fifa.com).
+4. If the evidence does not answer the question, say so honestly.
+5. Respond in the SAME language as the task context.
 5. End with: CONFIDENCE: [0-100]%
 6. Then end with this exact block (task's language, one short line each):
 ===PHEROMONE===
