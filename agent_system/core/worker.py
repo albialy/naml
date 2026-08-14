@@ -115,7 +115,7 @@ HANDOFF: [what the next agent most needs to know]
             if self.web_enabled:
                 # NAML Reconnaissance: search runs in pure Python (zero tokens,
                 # zero rate-limit risk); only the synthesis call costs tokens.
-                results = get_search().search(self.sub_question, max_results=6)
+                results = get_search().search(self.sub_question, max_results=6, alt_query=self.shared_memory.task_original)
                 if not results:
                     response = "Web search returned no results / لم يرجع البحث أي نتائج"
                 else:
