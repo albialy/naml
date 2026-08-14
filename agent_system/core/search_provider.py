@@ -103,7 +103,17 @@ class SearchProvider(ABC):
         ...
 
 
+def _looks_arabic(text: str) -> bool:
+    return any("\u0600" <= ch <= "\u06FF" for ch in text)
+
+
 class DuckDuckGoProvider(SearchProvider):
+    """DuckDuckGo's free results vary noticeably between calls (no key,
+    no SLA). Rather than chase one 'perfect' query, we search multiple
+    phrasings and MERGE the results — a wider net catches sources that
+    any single attempt might miss. Still zero tokens, just more HTTP
+    calls (which are the free part of this whole layer)."""
+
     def _raw_search(self, query: str, max_results: int) -> List[Dict[str, Any]]:
         from ddgs import DDGS
         raw = []
@@ -126,17 +136,33 @@ class DuckDuckGoProvider(SearchProvider):
             }
             item["score"] = score_result(item, query)
             results.append(item)
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:max_results]
-
-    def search(self, query: str, max_results: int = 6) -> List[Dict[str, Any]]:
-        results = self._raw_search(query, max_results)
-        if results and not _has_topic_authority(results, query):
-            sharper_query = f"{query} official authoritative source"
-            retry_results = self._raw_search(sharper_query, max_results)
-            if _has_topic_authority(retry_results, query):
-                results = retry_results
         return results
+
+    def search(self, query: str, max_results: int = 6, alt_query: str = "") -> List[Dict[str, Any]]:
+        # Search MULTIPLE phrasings and merge, rather than trusting one
+        # query to be phrased well. A long "official databases only"
+        # sub-question can bias DuckDuckGo away from local news sources
+        # that may hold the only real-world coverage of small/local
+        # events. alt_query (the user's original short question, often
+        # in the natural language) widens the net in the other direction.
+        queries = [query]
+        if alt_query and alt_query.strip() and alt_query.strip() != query.strip():
+            queries.append(alt_query.strip())
+        if len(queries) == 1:
+            queries.append(f"{query} official authoritative source")
+
+        seen_domains = set()
+        merged: List[Dict[str, Any]] = []
+        for q in queries:
+            for item in self._raw_search(q, max_results):
+                key = item["url"] or (item["domain"], item["title"])
+                if key in seen_domains:
+                    continue
+                seen_domains.add(key)
+                merged.append(item)
+
+        merged.sort(key=lambda x: x["score"], reverse=True)
+        return merged[:max_results]
 
 
 def format_evidence(results: List[Dict[str, Any]]) -> str:
