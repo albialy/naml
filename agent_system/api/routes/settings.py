@@ -7,6 +7,8 @@ from agent_system.core.settings_manager import settings_manager, AVAILABLE_MODEL
 from agent_system.core.connectors.groq_connector import GroqConnector
 from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 import time
+import os
+from agent_system.core.execution_policy import ExecutionPolicy
 
 router = APIRouter()
 
@@ -33,7 +35,15 @@ class SystemSettingsModel(BaseModel):
 
 @router.get("/api/settings")
 async def get_settings(current_user: User = Depends(require_super_admin)):
-    return settings_manager.get_settings()
+    settings = settings_manager.get_settings()
+    return {**settings, "source_status": {"groq": bool(os.getenv("GROQ_API_KEY")),
+                                          "openrouter": bool(os.getenv("OPENROUTER_API_KEY"))}}
+
+@router.put("/api/settings/execution")
+def update_execution(config: ExecutionPolicy, current_user: User = Depends(require_super_admin)):
+    if not settings_manager.update_execution(config.model_dump(), current_user.id):
+        raise HTTPException(400, detail="اختر أدوارًا موجودة في إعدادات النماذج")
+    return {"success": True}
 
 @router.put("/api/settings/director")
 async def update_director(config: ModelConfigModel, current_user: User = Depends(require_super_admin)):
@@ -105,3 +115,35 @@ async def restore_settings(history_index: int, current_user: User = Depends(requ
     if not success:
         raise HTTPException(status_code=400, detail={"error": "Restore failed or invalid history index", "code": "RESTORE_FAILED"})
     return {"success": True}
+
+@router.get('/api/settings/catalog/{provider}')
+def live_catalog(provider:str,current_user:User=Depends(require_super_admin)):
+    if provider not in ('groq','openrouter'):raise HTTPException(400,detail='مزود غير معروف')
+    from agent_system.core.model_catalog import catalog
+    try:return {'provider':provider,'models':catalog(provider)}
+    except ValueError as e:raise HTTPException(400,detail=str(e))
+
+@router.post('/api/settings/test-model')
+def test_model(config:ModelConfigModel,current_user:User=Depends(require_super_admin)):
+    if not settings_manager._validate_model_config(config.model_dump()):raise HTTPException(400,detail='إعدادات غير صالحة')
+    from agent_system.core.director import Director
+    from agent_system.core.worker import _is_error_response
+    connector=Director()._connector_for(config.model_dump())
+    answer=connector.complete('Reply only OK.','Connectivity test',0,64)
+    if _is_error_response(answer):raise HTTPException(400,detail=answer)
+    return {'success':True,'provider':config.provider,'model':config.model}
+
+@router.get('/api/settings/retired-models')
+def retired_models(current_user:User=Depends(require_super_admin)):
+    from agent_system.core.model_catalog import replacements
+    return replacements(settings_manager.get_settings())
+
+@router.post('/api/settings/repair-models')
+def repair_models(current_user:User=Depends(require_super_admin)):
+    from agent_system.core.model_catalog import replacements, RETIRED_GROQ
+    def repair(settings):
+        for config in [settings['director']]+list(settings.get('workers',{}).values()):
+            if config.get('provider')=='groq' and config.get('model') in RETIRED_GROQ:config['model']=RETIRED_GROQ[config['model']]
+    changes=replacements(settings_manager.get_settings())
+    settings_manager._change(current_user.id,'retired_models_repair',repair)
+    return {'changes':changes}

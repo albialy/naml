@@ -8,15 +8,15 @@ from agent_system.core.worker import Worker
 from agent_system.core.orchestrator import Orchestrator
 from agent_system.core.connectors.groq_connector import GroqConnector
 from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
+from agent_system.core.execution_policy import policy_for, role_config, answer_style, ROUTER_PROMPT
+from agent_system.core.execution_runtime import ExecutionRuntime, TrackedConnector
 
-DIRECTOR_SYSTEM_PROMPT = """You are not an assistant. You are a thinking system.
-Your job is not to answer questions.
-Your job is to find the right question first,
-then orchestrate the right minds to answer it.
-
-You have one absolute rule:
-Never output a final answer before completing
-all seven stages. No exceptions.
+DIRECTOR_SYSTEM_PROMPT = """Plan only the work needed for the user's actual request.
+There are no mandatory thinking stages. Do not reframe a clear request into a larger project.
+Use 1-4 focused agents at most, within the supplied limit. Prefer one agent when sufficient.
+Parallelize independent questions; specify depends_on using sub_question_id values for real dependencies.
+Do not schedule debate or repeated review unless the user explicitly needs competing arguments.
+Choose worker_type only from the supplied role list. Never invent model names or providers.
 
 CRITICAL HONESTY RULE:
 If the task refers to material that was not provided
@@ -35,30 +35,8 @@ reasoning-only sub-questions should keep "needs_web": false.
 Give each web researcher a narrow, specific research question
 (one fact-set per researcher, not everything at once).
 
-STAGE 0 - DECONSTRUCT THE REQUEST:
-List every hidden assumption.
-Challenge each assumption.
-Find the REAL QUESTION behind the surface question.
-
-STAGE 1 - IDENTIFY PROBLEM LEVEL:
-LEVEL 1: missing information -> find data
-LEVEL 2: recurring pattern -> analyze
-LEVEL 3: system design -> restructure
-LEVEL 4: false assumption -> first principles
-
-STAGE 2 - DECOMPOSE:
-Break into 2-6 independent sub-questions.
-No overlaps. No gaps.
-
-STAGE 3 - ASSIGN AGENTS:
-For each sub-question define name, role, perspective,
-bias to watch for, and speed (fast/deep).
-
-STAGE 4 - CONVERSATION PATTERN:
-A=pipeline, B=parallel, C=debate, D=hybrid
-
-STAGE 5 - FINISH LINE:
-Completion criteria and contradiction protocol.
+Keep plan fields short. Describe deliverables and checks, not private reasoning.
+A=pipeline, B=parallel, C=explicit debate, D=dependency graph.
 
 Respond only in valid JSON matching this structure:
 {
@@ -80,6 +58,8 @@ Respond only in valid JSON matching this structure:
       "perspective": "",
       "bias": "",
       "speed": "fast|deep",
+      "worker_type": "fast",
+      "depends_on": [],
       "needs_web": false
     }
   ],
@@ -90,7 +70,9 @@ Respond only in valid JSON matching this structure:
   "contradiction_protocol": ""
 }"""
 
-CRITIC_SYSTEM_PROMPT = """You are an adversarial critic. Your only job is to attack answers and find their weaknesses. You are rewarded for finding real flaws, not for being polite.
+CRITIC_SYSTEM_PROMPT = """Verify the answer against the request, supplied evidence and constraints.
+Report material correctness failures or missing requirements. Do not invent objections to fill a template.
+Stylistic preferences alone do not justify another model call. An adequate answer can have no flaws.
 
 You must respond ONLY in valid JSON with this exact structure:
 {
@@ -147,53 +129,81 @@ def _extract_json(text: str) -> dict:
 
 
 class Director:
-    def __init__(self):
+    def __init__(self, settings_override=None):
         from agent_system.core.settings_manager import settings_manager
         self.settings_manager = settings_manager
+        self.settings_override = settings_override
         self.openrouter_connector = OpenRouterConnector()
         self.orchestrator = Orchestrator()
+
+    def get_settings(self):
+        return self.settings_override if self.settings_override is not None else self.settings_manager.get_settings()
 
     # ---- Live model resolution: reads settings on EVERY call ----
     # This is what makes the admin dropdown take effect instantly,
     # without any server restart.
     def _director_model(self) -> str:
-        settings = self.settings_manager.get_settings()
-        return settings.get("director", {}).get("model", "llama-3.3-70b-versatile")
+        settings = self.get_settings()
+        return settings.get("director", {}).get("model", "openai/gpt-oss-120b")
 
-    def _director_connector(self) -> GroqConnector:
-        return GroqConnector(model_name=self._director_model())
+    def _director_connector(self):
+        config = self.get_settings().get("director", {})
+        model = config.get("model", "openai/gpt-oss-120b")
+        provider = config.get("provider", "groq")
+        if provider == "groq":
+            connector = GroqConnector(model_name=model)
+            connector.max_tokens_limit = config.get("max_tokens", 4096)
+            return connector
+        if provider == "openrouter":
+            connector = OpenRouterConnector(model_name=model)
+            connector.max_tokens_limit = config.get("max_tokens", 4096)
+            return connector
+        raise ValueError(f"Unsupported director provider: {provider}")
 
-    def _critic_connector_live(self) -> GroqConnector:
-        """Critic must always be a DIFFERENT mind than the director."""
-        model = self._director_model()
-        if "gpt-oss" in model or "qwen3" in model:
-            return GroqConnector(model_name="llama-3.3-70b-versatile")
-        return GroqConnector(model_name="openai/gpt-oss-20b")
+    def _critic_connector_live(self):
+        # An optional explicit critic config, otherwise the selected director.
+        # A separate role is not represented as an independent model.
+        settings = self.get_settings()
+        selected = policy_for(settings).critic_role
+        return self._role_connector(selected)
 
-    def analyze_task(self, task: str) -> dict:
+    def _invoke(self, memory, connector, stage, *args, **kwargs):
+        runtime = getattr(memory, "_runtime", None) if memory else None
+        if runtime:
+            return runtime.call(connector, stage, *args, **kwargs)
+        return connector.complete(*args, **kwargs)
+
+    def _role_connector(self, role):
+        return self._director_connector() if role == "director" else self._connector_for(role_config(self.get_settings(), role))
+
+    def _connector_for(self, config):
+        if config["provider"] == "groq":
+            connector = GroqConnector(model_name=config["model"])
+        elif config["provider"] == "openrouter":
+            connector = OpenRouterConnector(model_name=config["model"])
+        else:
+            raise ValueError("مزود نموذج غير معروف")
+        connector.max_tokens_limit = config.get("max_tokens", 4096)
+        return connector
+
+    def analyze_task(self, task: str, memory=None) -> dict:
         try:
-            settings = self.settings_manager.get_settings()
+            settings = self.get_settings()
             temperature = settings.get("director", {}).get("temperature", 0.3)
             max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
-            response = self._director_connector().complete(
-                system_prompt=DIRECTOR_SYSTEM_PROMPT,
+            response = self._invoke(memory, self._director_connector(), "plan",
+                system_prompt=DIRECTOR_SYSTEM_PROMPT + "\nAvailable worker roles: " + ", ".join(settings.get("workers", {}))
+                    + "\nMaximum agents: " + str(min(4, settings.get("system", {}).get("max_agents_per_task", 6))),
                 user_message=f"Analyze this task: {task}",
                 temperature=temperature,
                 max_tokens=max_tokens
             )
+            from agent_system.core.worker import _is_error_response
+            if _is_error_response(response):raise RuntimeError(response)
             return _extract_json(response)
         except Exception as e:
-            return {
-                "error": str(e),
-                "surface_question": task,
-                "real_question": task,
-                "missing_input": False,
-                "problem_level": 1,
-                "pattern": "A",
-                "agents": [{"name": "DefaultWorker", "role": "Generalist", "sub_question_id": 1, "perspective": "General", "bias": "None", "speed": "fast"}],
-                "sub_questions": [{"id": 1, "question": task, "specialist": "General"}]
-            }
+            raise RuntimeError("تعذر تخطيط المهمة. راجع إعدادات النموذج المدير. " + str(e)) from e
 
     def _build_workers(self, plan: dict, memory: SharedMemory) -> list:
         workers = []
@@ -203,32 +213,19 @@ class Director:
 
             speed = agent_data.get("speed", "fast")
 
-            settings = self.settings_manager.get_settings()
+            settings = self.get_settings()
             workers_config = settings.get("workers", {})
             worker_type = "fast" if speed == "fast" else "deep_analytical"
 
-            provider = "groq"
-            model_name = "llama-3.3-70b-versatile"
-
-            if worker_type in workers_config:
-                provider = workers_config[worker_type].get("provider", provider)
-                model_name = workers_config[worker_type].get("model", model_name)
-            else:
-                if speed != "fast":
-                    provider = "openrouter"
-                    model_name = "qwen/qwen-72b-chat"
-
+            worker_type = agent_data.get("worker_type") if agent_data.get("worker_type") in workers_config else worker_type
+            if agent_data.get("worker_type") == "director":
+                worker_type = "director"
+            config = role_config(settings, worker_type)
             needs_web = bool(agent_data.get("needs_web", False))
-            if needs_web:
-                # Researcher: NAML's own search layer (free Python search),
-                # llama only synthesizes the evidence. No compound, no collisions.
-                connector = GroqConnector(model_name="llama-3.3-70b-versatile")
-            elif provider == "groq":
-                connector = GroqConnector(model_name=model_name)
-            else:
-                connector = OpenRouterConnector(model_name=model_name)
-                if not os.getenv("OPENROUTER_API_KEY"):
-                    connector = self._director_connector()
+            # Research synthesis uses the chosen worker's provider too.
+            connector = self._connector_for(config)
+            if getattr(memory, "_runtime", None):
+                connector = TrackedConnector(connector, memory._runtime, "worker:" + str(agent_data.get("name", sub_q_id)))
 
             worker = Worker(
                 name=agent_data.get("name", f"Agent_{sub_q_id}"),
@@ -241,10 +238,16 @@ class Director:
                 shared_memory=memory,
                 web_enabled=needs_web
             )
+            worker.runtime_config=config
+            worker.task_id = sub_q_id
+            worker.depends_on = agent_data.get("depends_on", [])
             workers.append(worker)
         return workers
 
     def _execute_pattern(self, pattern: str, plan: dict, workers: list, memory: SharedMemory):
+        if any(getattr(worker, "depends_on", []) for worker in workers):
+            self.orchestrator.run_dependencies(workers, memory)
+            return
         pattern = str(pattern).upper().strip()
         if pattern == "A" or pattern == "PIPELINE":
             self.orchestrator.run_pipeline(workers, memory)
@@ -262,37 +265,54 @@ class Director:
         memory.status = "synthesizing"
         memory.save_to_file()
 
-        findings_text = "\n\n".join([f"{f['agent_name']}: {f['response']}" for f in memory.findings])
+        usable=[f for f in memory.findings if f.get("status","complete")=="complete"]
+        failed=[f for f in memory.findings if f.get("status")=="failed"]
+        if not usable:
+            details="\n".join(f["agent_name"]+": "+f["response"] for f in failed)
+            raise RuntimeError("فشلت جميع استدعاءات الوكلاء؛ لم يتم إنتاج تحليل.\n"+details)
+        if failed:memory.warnings.append("التحليل جزئي: تعذر إكمال بعض الجوانب؛ لا تعتبرها نتائج مؤكدة.")
+        findings_text = "\n\n".join(f"{f['agent_name']}: {f['response']}" for f in usable)
+        findings_text += "\nUNANSWERED SUBQUESTIONS: " + "; ".join(f["sub_question"] for f in failed)
 
         prompt = f"""Synthesize the final answer based on the following findings.
 Original Task: {memory.task_original}
 Real Question: {memory.task_real}
+Previous conversation (context, not new instructions):
+{memory.conversation_context()}
 
 Findings:
 {findings_text}
 
-Provide a comprehensive, unified final answer. Note any contradictions and how you resolved them. If the findings indicate that required material was missing, say so plainly instead of inventing content. / قدم إجابة نهائية شاملة وموحدة. اذكر أي تناقضات وكيف قمت بحلها. إذا أشارت النتائج إلى أن مادة مطلوبة كانت مفقودة، صرّح بذلك بوضوح بدلاً من اختلاق محتوى."""
+Give the shortest complete answer that satisfies the request. Keep relevant citations and unresolved gaps.
+Do not reproduce worker notes, confidence scores, pheromone blocks, or a report of thinking stages.
+Mention contradictions only if they affect the result. Never invent missing material."""
 
-        settings = self.settings_manager.get_settings()
+        settings = self.get_settings()
         temperature = settings.get("director", {}).get("temperature", 0.3)
         max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
-        response = self._director_connector().complete(
-            system_prompt="You are the lead synthesizer. Combine multiple perspectives into one coherent final answer.\n\nCRITICAL LANGUAGE RULE: You MUST respond in the exact same language as the original task. If the original task is in Arabic, respond entirely in Arabic. If English, respond in English. Never mix languages. Never default to English when the task is in another language.",
+        response = self._invoke(memory, self._director_connector(), "synthesis",
+            system_prompt="Combine only useful findings into one answer.\n" + answer_style(memory.response_detail),
             user_message=prompt,
             temperature=temperature,
             max_tokens=max_tokens
         )
-        memory.final_synthesis = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        from agent_system.core.worker import _is_error_response
+        if _is_error_response(response):
+            raise RuntimeError(response)
+        memory.final_synthesis = self._clean_answer(response)
 
     def _critic(self, memory: SharedMemory):
-        """Adversarial critic: a DIFFERENT model attacks the answer, then confidence is recalibrated."""
-        prompt = f"""Task (real question): {memory.task_real}
+        """Review using the configured critic role or the selected director."""
+        prompt = f"""Original task: {memory.task_original}
+Task (real question): {memory.task_real}
+Supplied context: {memory.conversation_context()}
+Successful evidence: {json.dumps([f for f in memory.findings if f.get('status','complete')=='complete'], ensure_ascii=False)}
 
 Answer to attack:
 {memory.final_synthesis}
 
-Attack this answer. Find every real weakness."""
+Check whether the answer satisfies the request and is supported by the evidence."""
 
         base_confidence = 50.0
         if memory.findings:
@@ -300,7 +320,7 @@ Attack this answer. Find every real weakness."""
 
         critic = self._critic_connector_live()
         try:
-            response = critic.complete(
+            response = self._invoke(memory, critic, "review",
                 system_prompt=CRITIC_SYSTEM_PROMPT,
                 user_message=prompt,
                 temperature=0.2,
@@ -322,6 +342,16 @@ Attack this answer. Find every real weakness."""
             memory.confidence_final = round(max(0.0, min(100.0, adjusted)), 1)
 
             flaws = verdict.get("flaws", [])
+            if flaws and (severity>=5 or fabrication or ignored_missing):
+                revised=self._invoke(memory, self._director_connector(), "revision",
+                    "Revise only material flaws. Use supplied evidence; state unresolved gaps. Do not invent facts.\n" + answer_style(memory.response_detail),
+                    json.dumps({"task":memory.task_original,"context":memory.conversation_context(),"answer":memory.final_synthesis,"flaws":flaws,"evidence":[f for f in memory.findings if f.get("status","complete")=="complete"]},ensure_ascii=False),0.2,self.get_settings()['director'].get('max_tokens',4096))
+                from agent_system.core.worker import _is_error_response
+                if _is_error_response(revised):memory.warnings.append("تعذرت مراجعة الصياغة؛ توجد ملاحظات نقد لم تُحسم.")
+                else:
+                    memory.final_synthesis=self._clean_answer(revised)
+                    memory.execution["revision_applied"]=True
+                    memory.warnings.append("عُدّلت الإجابة بعد مراجعة نقدية واحدة؛ لم تخضع النسخة المعدلة لمراجعة مستقلة أخرى.")
             flaws_text = "\n".join(f"- {fl}" for fl in flaws) if flaws else "-"
             memory.stress_test_results = (
                 f"CRITIC MODEL: {getattr(critic, 'model_name', 'unknown')}\n"
@@ -334,38 +364,126 @@ Attack this answer. Find every real weakness."""
             )
         except Exception as e:
             memory.confidence_final = round(base_confidence, 1)
-            memory.stress_test_results = f"Critic failed / فشل الناقد: {str(e)}"
+            memory.stress_test_results = "تعذرت المراجعة النقدية"
+            memory.warnings.append("لم تكتمل المراجعة النقدية لهذه الإجابة.")
+
+    @staticmethod
+    def _clean_answer(text):
+        return re.sub(r"<(think|reasoning)>.*?</\1>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+    def choose_strategy(self, task, memory):
+        settings = self.get_settings()
+        policy = policy_for(settings)
+        config = role_config(settings, policy.router_role)
+        connector = self._role_connector(policy.router_role)
+        if hasattr(connector, "reasoning_effort"):
+            connector.reasoning_effort = "low"
+        response = self._invoke(memory, connector, "route",
+            ROUTER_PROMPT + "\n" + answer_style(memory.response_detail),
+            memory.conversation_context(compact=True) + "\nCURRENT REQUEST: " + task,
+            0.1, min(config.get("max_tokens", 2048), policy.router_max_tokens))
+        from agent_system.core.worker import _is_error_response
+        if _is_error_response(response):
+            raise RuntimeError(response)
+        try:
+            if getattr(connector, "last_result", {}).get("finish_reason") == "length":
+                raise ValueError("truncated routing response")
+            result = _extract_json(response)
+            if result.get("route") not in ("clarify", "direct", "single", "research", "team"):
+                raise ValueError("unknown route")
+            if result["route"] == "clarify" and (not isinstance(result.get("questions"), list) or
+                    not result["questions"] or any(not isinstance(q, str) or not q.strip() for q in result["questions"])):
+                raise ValueError("invalid questions")
+            if result["route"] == "direct" and (not isinstance(result.get("answer"), str) or not result["answer"].strip()):
+                raise ValueError("empty direct answer")
+            if result.get("detail") not in ("auto", "brief", "detailed"):
+                result["detail"] = "auto"
+            if result["route"] == "direct" and result.get("review_required") is True:
+                result["route"] = "single"
+            return result
+        except (ValueError, TypeError, AttributeError):
+            # One bounded recovery call, never a forced team or a fake answer.
+            return {"route": "single", "reason": "تعذر قراءة التوجيه؛ متابعة بنموذج واحد", "routing_recovered": True}
+
+    def _single(self, task, memory):
+        settings = self.get_settings()
+        role = policy_for(settings).single_role
+        config = role_config(settings, role)
+        response = self._invoke(memory, self._role_connector(role), "answer",
+            answer_style(memory.response_detail) + "\nAnswer using supplied context and stable knowledge only. "
+            "No live web evidence is available in this route; do not invent current facts or citations. "
+            "If current sources or unavailable attachments are essential, state that clearly.",
+            memory.conversation_context() + "\nCURRENT REQUEST: " + task,
+            config.get("temperature", 0.3), config.get("max_tokens", 4096))
+        from agent_system.core.worker import _is_error_response
+        if _is_error_response(response):
+            raise RuntimeError(response)
+        memory.final_synthesis = self._clean_answer(response)
 
     def run(self, task: str, memory: SharedMemory):
+        settings = self.get_settings()
+        policy = policy_for(settings)
+        fallback = (lambda: self._role_connector(policy.fallback_role)) if policy.fallback_role else None
+        memory._runtime = ExecutionRuntime(memory, settings, fallback)
         try:
             memory.status = "running"
+            memory.task_real = task
             memory.save_to_file()
-
-            plan = self.analyze_task(task)
-
-            memory.task_real = plan.get("real_question", task)
-            memory.problem_level = plan.get("problem_level", 1)
-            memory.agents_plan = plan.get("agents", [])
-            memory.conversation_pattern = plan.get("pattern", "A")
+            # Adaptive routing is now the default path for every request. Legacy
+            # adaptive_routing=False no longer forces seven-stage analysis.
+            strategy = self.choose_strategy(task, memory)
+            route = strategy["route"]
+            memory.execution.update(route=route, reason=str(strategy.get("reason", ""))[:300],
+                                    project_relevant=strategy.get("project_relevant") is True)
+            if memory.response_detail == "auto":
+                memory.response_detail = strategy.get("detail", "auto")
             memory.save_to_file()
-
-            settings = self.settings_manager.get_settings()
-            max_agents = settings.get("system", {}).get("max_agents_per_task", 6)
-
-            workers = self._build_workers(plan, memory)
-            if len(workers) > max_agents:
-                workers = workers[:max_agents]
-
-            self._execute_pattern(plan.get("pattern", "A"), plan, workers, memory)
-
-            self._synthesize(memory)
-            self._critic(memory)
-
+            if route in ("direct", "clarify"):
+                memory.final_synthesis = self._clean_answer(strategy["answer"]) if route == "direct" else "\n\n".join(strategy["questions"][:2])
+            elif route == "single":
+                self._single(task, memory)
+                if strategy.get("review_required") is True:
+                    self._critic(memory)
+            else:
+                context = memory.conversation_context()
+                if route == "research":
+                    plan = {"real_question": task, "problem_level": 1, "pattern": "A",
+                            "agents": [{"name": "باحث المصادر", "role": "Researcher", "sub_question_id": 1,
+                                        "speed": "deep", "worker_type": policy.research_role, "needs_web": True}],
+                            "sub_questions": [{"id": 1, "question": task}]}
+                else:
+                    planning_task = f"PREVIOUS CONVERSATION:\n{context}\n\nCURRENT USER REQUEST:\n{task}"
+                    plan = self.analyze_task(planning_task, memory)
+                if plan.get("missing_input"):
+                    memory.execution["route"] = "clarify"
+                    memory.final_synthesis = plan.get("missing_description") or "أرفق المادة المطلوبة حتى أتمكن من مراجعتها."
+                else:
+                    if not plan.get("agents"):
+                        raise ValueError("لم ينتج المدير خطة قابلة للتنفيذ")
+                    max_agents = min(settings.get("system", {}).get("max_agents_per_task", 6),
+                                     max(1, memory._runtime.remaining_calls - 3))
+                    if len(plan["agents"]) > max_agents:
+                        raise ValueError("الخطة تتجاوز ميزانية الاستدعاءات؛ قلل نطاق الطلب أو ارفع السقف.")
+                    memory.task_real = plan.get("real_question", task)
+                    memory.problem_level = plan.get("problem_level", 1)
+                    memory.agents_plan = plan["agents"]
+                    memory.conversation_pattern = plan.get("pattern", "B")
+                    memory.save_to_file()
+                    workers = self._build_workers(plan, memory)
+                    self._execute_pattern(plan.get("pattern", "B"), plan, workers, memory)
+                    self._synthesize(memory)
+                    if route == "team" or strategy.get("review_required") is True:
+                        self._critic(memory)
+            if not memory.final_synthesis.strip():
+                raise ValueError("لم ينتج النموذج إجابة صالحة")
             memory.status = "complete"
-            memory.completed_at = datetime.now().isoformat()
-            memory.save_to_file()
-
-        except Exception as e:
+        except Exception as exc:
             memory.status = "failed"
-            memory.final_synthesis = f"Error during execution / خطأ أثناء التنفيذ: {str(e)}"
+            memory.final_synthesis = "تعذر إكمال الطلب: " + str(exc)
+        finally:
+            metrics = memory._runtime.summary()
+            memory.execution.update(metrics)
+            if any(row.get("finish_reason") == "length" and row["stage"] in ("answer", "synthesis", "revision") for row in metrics["calls"]):
+                memory.warnings.append("بلغ الرد حد الإخراج المحدد للنموذج؛ قد يكون غير مكتمل.")
+            memory.completed_at = datetime.now().isoformat()
             memory.save_to_file()
