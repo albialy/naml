@@ -5,6 +5,7 @@ import { apiClient } from "../api/client";
 import { useAuthStore } from "../store/authStore";
 import { ModelSettings } from "../components/ModelSettings";
 import { ModelChoice, apiError } from "../types/project";
+import { GitHubAccount } from "../components/GitHubAccount";
 export function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const cache = useQueryClient();
@@ -62,6 +63,7 @@ export function SettingsPage() {
           إعدادات النظام والوكلاء واختبار الاتصال ←
         </Link>
       )}
+      <GitHubAccount />
     </div>
   );
 }

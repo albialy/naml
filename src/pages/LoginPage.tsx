@@ -1,6 +1,7 @@
 import { AntMark } from "../components/AntMark";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../store/authStore";
 import { apiClient } from "../api/client";
 import { endpoints } from "../api/endpoints";
@@ -8,6 +9,7 @@ import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Card, CardContent } from "../components/ui/Card";
 import { motion } from "motion/react";
+import { githubAuthMessage } from "../lib/githubAuth";
 
 export function LoginPage() {
   const [username, setUsername] = useState("");
@@ -16,6 +18,8 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuthStore();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const providers = useQuery({queryKey: ["auth-providers"], queryFn: async () => (await apiClient.get("/auth/providers")).data});
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,6 +119,7 @@ export function LoginPage() {
                     {error}
                   </div>
                 )}
+                {params.get("github_error") && <p role="alert" className="text-red-700 text-sm leading-7">{githubAuthMessage(params.get("github_error"))}</p>}
 
                 <Button
                   type="submit"
@@ -139,6 +144,7 @@ export function LoginPage() {
                     type="button"
                     variant="outline"
                     className="w-full relative opacity-50 cursor-not-allowed"
+                    disabled
                   >
                     تسجيل الدخول عبر Google
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 bg-[#cbddea] text-xs px-2 py-0.5 rounded">
@@ -148,13 +154,13 @@ export function LoginPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full relative opacity-50 cursor-not-allowed"
+                    className="w-full"
+                    disabled={!providers.data?.github?.enabled}
+                    onClick={() => window.location.assign("/api/auth/github/start")}
                   >
                     تسجيل الدخول عبر GitHub
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 bg-[#cbddea] text-xs px-2 py-0.5 rounded">
-                      قريباً
-                    </span>
                   </Button>
+                  {!providers.data?.github?.enabled && <p className="text-xs muted text-center">{providers.isError ? "تعذر التحقق من إعداد GitHub." : "الدخول عبر GitHub غير مفعّل على الخادم بعد."}</p>}
                 </div>
               </form>
             </CardContent>

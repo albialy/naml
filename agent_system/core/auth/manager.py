@@ -72,11 +72,30 @@ class AuthManager:
         user = self.get_user_by_username(username)
         if not user or not user.is_active or user.password_hash != self._hash_password(password):
             return None
-        user.last_login = datetime.now(timezone.utc).isoformat()
-        self._save_user(user, ["last_login"])
+        return self.issue_token_for_user(user.id)
+
+    def issue_token_for_user(self, user_id, github_identity=None):
+        """Internal session issuance after a password or verified OAuth identity."""
         created_at = datetime.now(timezone.utc)
-        token = AuthToken(token=str(uuid.uuid4()), user_id=user.id, expires_at=created_at + timedelta(hours=24), created_at=created_at)
-        self.database.set_document(self._token_key(token.token), {"user_id": user.id, "expires_at": token.expires_at.isoformat(), "created_at": created_at.isoformat()})
+        token = AuthToken(token=str(uuid.uuid4()), user_id=user_id, expires_at=created_at + timedelta(hours=24), created_at=created_at)
+        token_key = self._token_key(token.token)
+        with self.database.connection(write=True) as conn:
+            keys = ["users", token_key]
+            if github_identity is not None:
+                keys.append("github_identities")
+            for key in sorted(keys):
+                self.database.lock(conn, key)
+            users = self.database._get(conn, "users", {})
+            user = self._decode(users.get(user_id))
+            if not user or not user.is_active:
+                return None
+            if github_identity is not None:
+                identity = self.database._get(conn, "github_identities", {}).get(github_identity)
+                if not identity or identity["user_id"] != user_id:
+                    return None
+            users[user_id]["last_login"] = created_at.isoformat()
+            self.database._put(conn, "users", users)
+            self.database._put(conn, token_key, {"user_id": user.id, "expires_at": token.expires_at.isoformat(), "created_at": created_at.isoformat()})
         self._log_activity("LOGIN", user.id)
         return token
 

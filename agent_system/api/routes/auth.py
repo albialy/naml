@@ -8,6 +8,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 router = APIRouter()
 security = HTTPBearer()
 
+from agent_system.api.routes.github_auth import router as github_router
+router.include_router(github_router)
+
 class LoginRequest(BaseModel):
     username: str
     password: str
