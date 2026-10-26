@@ -1,0 +1,11 @@
+node_modules
+venv
+.venv
+.git
+.env
+.env.local
+agent_system/storage
+data
+__pycache__
+*.pyc
+.pytest_cache
