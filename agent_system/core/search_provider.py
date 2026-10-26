@@ -170,7 +170,7 @@ def format_evidence(results: List[Dict[str, Any]]) -> str:
         return ""
     lines = []
     for i, r in enumerate(results, 1):
-        lines.append(f"[{i}] {r['title']} — {r['snippet']} (source: {r['domain']})")
+        lines.append(f"[{i}] {r['title']} — {r['snippet']} (source: {r['domain']}; URL: {r.get('url', '')})")
     return "\n".join(lines)
 
 

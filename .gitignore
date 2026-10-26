@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Persistent local data
+agent_system/storage/
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.env

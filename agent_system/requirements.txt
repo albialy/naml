@@ -1,9 +1,11 @@
-fastapi
+fastapi>=0.110,<1
 uvicorn
 groq
 requests
 pyyaml
 python-dotenv
-pydantic
+pydantic>=2.7,<3
 python-multipart
 ddgs
+
+psycopg[binary]>=3.2,<4

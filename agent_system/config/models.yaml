@@ -1,22 +1,21 @@
 director:
   provider: groq
-  model: llama-3.3-70b-versatile
+  model: openai/gpt-oss-120b
   temperature: 0.3
   max_tokens: 4096
-
 workers:
+  fast:
+    provider: groq
+    model: openai/gpt-oss-20b
+    temperature: 0.5
+    max_tokens: 2048
   deep_analytical:
-    provider: openrouter
-    model: qwen/qwen-72b-chat
+    provider: groq
+    model: openai/gpt-oss-120b
     temperature: 0.2
     max_tokens: 4096
   creative:
-    provider: openrouter
-    model: mistralai/mixtral-8x7b-instruct
-    temperature: 0.8
-    max_tokens: 2048
-  fast:
     provider: groq
-    model: llama-3.3-70b-versatile
-    temperature: 0.5
+    model: openai/gpt-oss-120b
+    temperature: 0.8
     max_tokens: 2048

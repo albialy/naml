@@ -12,4 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 COPY --from=frontend /app/dist ./dist
 EXPOSE 8000
+ENV NAML_DATA_DIR=/app/data
+VOLUME ["/app/data"]
 CMD ["sh", "-c", "uvicorn agent_system.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

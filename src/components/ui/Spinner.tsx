@@ -1,20 +1,20 @@
-import React from 'react';
-import { cn } from '../../lib/utils';
+import React from "react";
+import { cn } from "../../lib/utils";
 
 export interface SpinnerProps extends React.SVGAttributes<SVGSVGElement> {
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
 }
 
-export function Spinner({ className, size = 'md', ...props }: SpinnerProps) {
+export function Spinner({ className, size = "md", ...props }: SpinnerProps) {
   const sizes = {
-    sm: 'w-4 h-4',
-    md: 'w-6 h-6',
-    lg: 'w-8 h-8'
+    sm: "w-4 h-4",
+    md: "w-6 h-6",
+    lg: "w-8 h-8",
   };
 
   return (
     <svg
-      className={cn("animate-spin text-[#F5A623]", sizes[size], className)}
+      className={cn("animate-spin text-[#168bd2]", sizes[size], className)}
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 24 24"

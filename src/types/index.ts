@@ -37,3 +37,42 @@ export interface SessionSummary {
   created_at: string;
   confidence_final: number;
 }
+
+export interface ConversationSummary {
+  project_id?: string;
+  conversation_id: string;
+  user_id: string;
+  title: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  active_session_id: string;
+  message_count: number;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  session_id: string;
+  created_at: string;
+  status?: string;
+  confidence?: number;
+  execution?: ExecutionInfo;
+  warnings?:string[];
+}
+
+export interface ExecutionInfo {
+  route?: string;
+  reason?: string;
+  revision_applied?: boolean;
+  model_calls?: number;
+  duration_ms?: number;
+  reported_tokens?: number;
+  usage_complete?: boolean;
+  calls?: {stage: string; provider: string; model: string; status: string; duration_ms?: number; total_tokens: number | null; fallback?: boolean}[];
+}
+
+export interface Conversation extends ConversationSummary {
+  messages: ConversationMessage[];
+}

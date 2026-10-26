@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from agent_system.api.routes import tasks, sessions, auth, admin, settings
+from agent_system.api.routes import tasks, sessions, auth, admin, settings, conversations, projects
 from agent_system.core.connectors.groq_connector import GroqConnector
 from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 import logging
@@ -28,9 +28,22 @@ app.include_router(admin.router)
 app.include_router(settings.router)
 app.include_router(tasks.router)
 app.include_router(sessions.router)
+app.include_router(conversations.router)
+app.include_router(projects.router)
 
 @app.on_event("startup")
 async def startup_event():
+    # The shipped launcher runs one API process. Unfinished work from its
+    # previous lifetime is kept as an interrupted turn, never silently lost.
+    if os.getenv("NAML_RECOVER_INTERRUPTED", "true").lower() == "true":
+        from agent_system.core.storage import get_storage
+        for session in get_storage().list_sessions():
+            if session.get("status") in ("pending", "running", "synthesizing"):
+                session["status"] = "failed"
+                session["final_synthesis"] = "توقف هذا التحليل عند إعادة تشغيل الخادم. يمكنك إرسال رسالة جديدة لمتابعة المحادثة."
+                get_storage().save_session(session)
+        from agent_system.core.projects import recover_interrupted_proposals
+        recover_interrupted_proposals()
     logger.info("Validating API connections... / التحقق من اتصالات واجهة برمجة التطبيقات...")
     groq = GroqConnector()
     if groq.validate_connection():

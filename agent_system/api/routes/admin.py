@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from agent_system.core.auth.manager import auth_manager, LOGS_FILE
+from agent_system.core.auth.manager import auth_manager
+from agent_system.core.database import get_database
+from agent_system.core.storage import get_storage
 from agent_system.core.auth.models import User, UserRole
 from agent_system.core.auth.middleware import require_super_admin
 import os
@@ -59,44 +61,16 @@ async def delete_user(user_id: str, current_user: User = Depends(require_super_a
 
 @router.get("/api/admin/sessions")
 async def get_all_sessions(current_user: User = Depends(require_super_admin)):
-    storage_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'storage', 'sessions')
-    if not os.path.exists(storage_dir):
-        return []
-        
     sessions = []
-    for filename in os.listdir(storage_dir):
-        if filename.endswith(".json"):
-            file_path = os.path.join(storage_dir, filename)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    user_id = data.get("user_id", "")
-                    user = auth_manager.get_user(user_id)
-                    username = user.username if user else "unknown"
-                    
-                    sessions.append({
-                        "session_id": data.get("session_id"),
-                        "task_original": data.get("task_original"),
-                        "status": data.get("status"),
-                        "created_at": data.get("created_at"),
-                        "confidence_final": data.get("confidence_final"),
-                        "user_id": user_id,
-                        "username": username
-                    })
-            except Exception:
-                continue
-                
+    for data in get_storage().list_sessions():
+        user = auth_manager.get_user(data.get("user_id", ""))
+        sessions.append({key: data.get(key) for key in ["session_id", "conversation_id", "task_original", "status", "created_at", "confidence_final", "user_id"]} | {"username": user.username if user else "unknown"})
     return sessions
 
 @router.get("/api/admin/logs")
 async def get_logs(current_user: User = Depends(require_super_admin)):
-    if not os.path.exists(LOGS_FILE):
-        return []
-    try:
-        with open(LOGS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return []
+    return get_database().get_document("activity_log", [])
+
 @router.get("/api/debug/search-test")
 async def debug_search_test(q: str = "Egypt earthquake 2026"):
     """Temporary diagnostic endpoint - REMOVE after debugging."""
