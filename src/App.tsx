@@ -15,6 +15,7 @@ import "./index.css";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { GitHubCompletePage } from "./pages/GitHubCompletePage";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/github/complete" element={<GitHubCompletePage />} />
 
           <Route element={<AppLayout />}>
             <Route path="/" element={<HomePage />} />

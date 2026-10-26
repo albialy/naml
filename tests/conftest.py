@@ -14,6 +14,8 @@ os.environ["STORAGE_BACKEND"] = "sqlite"
 os.environ.pop("DATABASE_URL", None)
 os.environ.pop("GROQ_API_KEY", None)
 os.environ.pop("OPENROUTER_API_KEY", None)
+for _key in ("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_REDIRECT_URI"):
+    os.environ.pop(_key, None)
 
 from agent_system.core.database import Database
 from agent_system.core import database as database_module, storage
