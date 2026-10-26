@@ -1,0 +1,13 @@
+services:
+  naml:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      NAML_DATA_DIR: /app/data
+    volumes:
+      - naml_data:/app/data
+    restart: unless-stopped
+volumes:
+  naml_data:

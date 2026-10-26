@@ -10,6 +10,10 @@ export const endpoints = {
   history: {
     list: '/sessions',
   },
+  conversations: {
+    list: '/conversations',
+    get: (id: string) => `/conversations/${id}`,
+  },
   admin: {
     users: '/admin/users',
     updateRole: (id: string) => `/admin/users/${id}/role`,

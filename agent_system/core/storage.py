@@ -2,8 +2,8 @@
 NAML Storage Layer — Repository Pattern
 =========================================
 Single gateway for all session persistence.
-Swap backends via env var STORAGE_BACKEND (json | supabase).
-The rest of the system NEVER touches files or databases directly.
+Active backends: sqlite | postgres. JSON/Supabase adapters are retained
+only as legacy import readers.
 """
 import os
 import json
@@ -191,19 +191,30 @@ class SupabaseStorage(StorageBackend):
 # ---------------------------------------------------------------
 # Factory + singleton: the ONLY thing the rest of the code imports
 # ---------------------------------------------------------------
+class SQLStorage(StorageBackend):
+    def __init__(self):
+        from agent_system.core.database import get_database
+        self.database = get_database()
+
+    def save_session(self, session):
+        self.database.save_session(session)
+
+    def get_session(self, session_id):
+        return self.database.get_session(session_id)
+
+    def list_sessions(self, user_id=None):
+        return self.database.list_sessions(user_id)
+
+    def delete_session(self, session_id):
+        return self.database.delete_session(session_id)
+
+
 _storage_instance: Optional[StorageBackend] = None
 
 
 def get_storage() -> StorageBackend:
-    """Return the active backend. Chosen once per process via
-    STORAGE_BACKEND env var. Default: json."""
+    """Return the durable SQL backend. Default: SQLite."""
     global _storage_instance
     if _storage_instance is None:
-        backend = os.getenv("STORAGE_BACKEND", "json").lower().strip()
-        if backend == "json":
-            _storage_instance = JSONStorage()
-        elif backend == "supabase":
-            _storage_instance = SupabaseStorage()
-        else:
-            raise ValueError(f"Unknown STORAGE_BACKEND '{backend}'. Available: json, supabase")
+        _storage_instance = SQLStorage()
     return _storage_instance
