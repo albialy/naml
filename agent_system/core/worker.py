@@ -3,6 +3,7 @@ import time
 from agent_system.core.connectors.base import BaseConnector
 from agent_system.core.search_provider import get_search, format_evidence
 from agent_system.core.memory import SharedMemory
+from agent_system.core.role_cards import role_prompt
 
 # Connector error strings start with these (GroqConnector returns errors as text)
 ERROR_PREFIXES = (
@@ -65,7 +66,7 @@ class Worker:
 
     def _full_prompt(self) -> str:
         """A focused work order for one scoped sub-question."""
-        return f"""You are {self.name}.
+        prompt = f"""You are {self.name}.
 Your role: {self.role}
 Your unique perspective: {self.perspective}
 Your known bias to watch for: {self.bias_warning}
@@ -100,6 +101,13 @@ EVIDENCE: [what it rests on]
 GAPS: [what you could not answer]
 HANDOFF: [what the next agent most needs to know]
 ===END==="""
+        return self._with_role_card(prompt)
+
+    def _with_role_card(self, prompt):
+        role = getattr(self, "role_key", "fast" if self.speed == "fast" else "deep_analytical")
+        settings = self.shared_memory.run_settings or self.settings_manager.get_settings()
+        config = getattr(self, "runtime_config", None) or settings.get("workers", {}).get(role, {})
+        return role_prompt(config, role, "research" if self.web_enabled else "worker", prompt)
 
     def _call(self, prompt: str, temperature, max_tokens) -> str:
         return self.connector.complete(prompt, f"Answer your research/sub question now: {self.sub_question}", temperature, max_tokens)
@@ -159,7 +167,7 @@ EVIDENCE: [strongest sources by domain]
 GAPS: [what the evidence did not cover]
 HANDOFF: [what the next agent needs]
 ===END==="""
-                    response = self.connector.complete(synth_prompt, "Synthesize your evidence-based answer now.", temperature, max_tokens)
+                    response = self.connector.complete(self._with_role_card(synth_prompt), "Synthesize your evidence-based answer now.", temperature, max_tokens)
             else:
                 response = self._call(self._full_prompt(), temperature, max_tokens)
 

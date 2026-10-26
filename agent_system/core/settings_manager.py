@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 import yaml
 from agent_system.core.database import get_database
+from agent_system.core.role_cards import RoleCard
+from pydantic import ValidationError
+import re
 
 # Offline suggestions only; live catalog is fetched on explicit refresh.
 AVAILABLE_MODELS = {
@@ -49,6 +52,11 @@ class SettingsManager:
         return self._change(user_id, "execution", update)
 
     def _validate_model_config(self, config):
+        if config.get("role_card") is not None:
+            try:
+                RoleCard.model_validate(config["role_card"])
+            except (ValidationError, TypeError):
+                return False
         temperature = config.get("temperature")
         tokens = config.get("max_tokens")
         return (isinstance(temperature, (int, float)) and 0 <= temperature <= 1 and isinstance(tokens, int) and tokens > 0 and config.get("provider") in AVAILABLE_MODELS and isinstance(config.get("model"),str) and 0 < len(config["model"]) <= 200 and not any(c.isspace() for c in config["model"]))
@@ -88,7 +96,8 @@ class SettingsManager:
         return self._change(user_id, "workers." + worker_type, update)
 
     def add_worker(self, worker_type, config, user_id):
-        if not worker_type.strip() or not self._validate_model_config(config):
+        if (not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", worker_type)
+                or worker_type == "director" or not self._validate_model_config(config)):
             return False
         def add(current):
             if worker_type in current["workers"]:

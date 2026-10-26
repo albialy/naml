@@ -9,6 +9,7 @@ from agent_system.core.connectors.openrouter_connector import OpenRouterConnecto
 import time
 import os
 from agent_system.core.execution_policy import ExecutionPolicy
+from agent_system.core.role_cards import RoleCard, card_for
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ class ModelConfigModel(BaseModel):
     model: str
     temperature: float
     max_tokens: int
+    role_card: Optional[RoleCard] = None
 
 class AddWorkerModel(BaseModel):
     name: str
@@ -25,6 +27,7 @@ class AddWorkerModel(BaseModel):
     temperature: float = 0.5
     max_tokens: int = 2048
     description: Optional[str] = None
+    role_card: Optional[RoleCard] = None
 
 class SystemSettingsModel(BaseModel):
     max_agents_per_task: Optional[int] = None
@@ -36,6 +39,9 @@ class SystemSettingsModel(BaseModel):
 @router.get("/api/settings")
 async def get_settings(current_user: User = Depends(require_super_admin)):
     settings = settings_manager.get_settings()
+    settings["director"]["role_card"] = card_for(settings["director"], "director")
+    for role, config in settings.get("workers", {}).items():
+        config["role_card"] = card_for(config, role)
     return {**settings, "source_status": {"groq": bool(os.getenv("GROQ_API_KEY")),
                                           "openrouter": bool(os.getenv("OPENROUTER_API_KEY"))}}
 
@@ -47,14 +53,14 @@ def update_execution(config: ExecutionPolicy, current_user: User = Depends(requi
 
 @router.put("/api/settings/director")
 async def update_director(config: ModelConfigModel, current_user: User = Depends(require_super_admin)):
-    success = settings_manager.update_director(config.dict(), current_user.id)
+    success = settings_manager.update_director(config.model_dump(exclude_none=True), current_user.id)
     if not success:
         raise HTTPException(status_code=400, detail={"error": "Invalid model configuration", "code": "INVALID_CONFIG"})
     return {"success": True}
 
 @router.put("/api/settings/workers/{worker_type}")
 async def update_worker(worker_type: str, config: ModelConfigModel, current_user: User = Depends(require_super_admin)):
-    success = settings_manager.update_worker(worker_type, config.dict(), current_user.id)
+    success = settings_manager.update_worker(worker_type, config.model_dump(exclude_none=True), current_user.id)
     if not success:
         raise HTTPException(status_code=400, detail={"error": "Invalid worker configuration or worker not found", "code": "INVALID_CONFIG"})
     return {"success": True}
@@ -68,6 +74,8 @@ async def add_worker(config: AddWorkerModel, current_user: User = Depends(requir
         "max_tokens": config.max_tokens,
         "description": config.description
     }
+    if config.role_card is not None:
+        worker_conf["role_card"] = config.role_card.model_dump()
     success = settings_manager.add_worker(config.name, worker_conf, current_user.id)
     if not success:
         raise HTTPException(status_code=400, detail={"error": "Invalid worker configuration or worker already exists", "code": "INVALID_CONFIG"})
