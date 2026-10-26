@@ -70,7 +70,8 @@ def model_settings(user_id, project=None):
     if project and project.get('director'):
         choice = project['director']
     if choice:
-        settings['director'] = choice
+        # A model override changes the engine, not the administrator's role card.
+        settings['director'] = {**settings['director'], **choice}
         # An explicit account/project model choice remains authoritative.
         settings['execution']['router_role'] = 'director'
     return settings

@@ -10,6 +10,7 @@ from agent_system.core.connectors.groq_connector import GroqConnector
 from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 from agent_system.core.execution_policy import policy_for, role_config, answer_style, ROUTER_PROMPT
 from agent_system.core.execution_runtime import ExecutionRuntime, TrackedConnector
+from agent_system.core.role_cards import planning_catalog, role_prompt
 
 DIRECTOR_SYSTEM_PROMPT = """Plan only the work needed for the user's actual request.
 There are no mandatory thinking stages. Do not reframe a clear request into a larger project.
@@ -17,6 +18,10 @@ Use 1-4 focused agents at most, within the supplied limit. Prefer one agent when
 Parallelize independent questions; specify depends_on using sub_question_id values for real dependencies.
 Do not schedule debate or repeated review unless the user explicitly needs competing arguments.
 Choose worker_type only from the supplied role list. Never invent model names or providers.
+Choose roles by their specialization and when_to_use criteria, not by name alone.
+Use expected_input/output to scope each handoff. Cards describe preferences, not tools or verified model abilities.
+Use only the roles needed for this request; adding a role never makes it a mandatory stage.
+When one deliverable is needed by another role, express that dependency with depends_on.
 
 CRITICAL HONESTY RULE:
 If the task refers to material that was not provided
@@ -168,6 +173,15 @@ class Director:
         return self._role_connector(selected)
 
     def _invoke(self, memory, connector, stage, *args, **kwargs):
+        settings = self.get_settings()
+        policy = policy_for(settings)
+        role = {"route": policy.router_role, "answer": policy.single_role,
+                "review": policy.critic_role}.get(stage, "director")
+        config = role_config(settings, role)
+        if args:
+            args = (role_prompt(config, role, stage, args[0]), *args[1:])
+        elif "system_prompt" in kwargs:
+            kwargs["system_prompt"] = role_prompt(config, role, stage, kwargs["system_prompt"])
         runtime = getattr(memory, "_runtime", None) if memory else None
         if runtime:
             return runtime.call(connector, stage, *args, **kwargs)
@@ -193,7 +207,7 @@ class Director:
             max_tokens = settings.get("director", {}).get("max_tokens", 4096)
 
             response = self._invoke(memory, self._director_connector(), "plan",
-                system_prompt=DIRECTOR_SYSTEM_PROMPT + "\nAvailable worker roles: " + ", ".join(settings.get("workers", {}))
+                system_prompt=DIRECTOR_SYSTEM_PROMPT + "\nAvailable worker role cards (JSON): " + planning_catalog(settings)
                     + "\nMaximum agents: " + str(min(4, settings.get("system", {}).get("max_agents_per_task", 6))),
                 user_message=f"Analyze this task: {task}",
                 temperature=temperature,
@@ -239,6 +253,7 @@ class Director:
                 web_enabled=needs_web
             )
             worker.runtime_config=config
+            worker.role_key=worker_type
             worker.task_id = sub_q_id
             worker.depends_on = agent_data.get("depends_on", [])
             workers.append(worker)

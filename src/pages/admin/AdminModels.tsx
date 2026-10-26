@@ -1,3 +1,4 @@
+import { RoleCardEditor, RoleCardSummary, emptyRoleCard } from "../../components/RoleCardFields";
 import { ModelMaintenance, ModelPicker } from "../../components/ModelMaintenance";
 import { ExecutionSettings } from "../../components/ExecutionSettings";
 import { useState } from "react";
@@ -41,6 +42,7 @@ export function AdminModels() {
     model: "",
     temperature: 0.5,
     max_tokens: 2048,
+    role_card: emptyRoleCard(),
   });
 
   const [addingWorker, setAddingWorker] = useState(false);
@@ -50,6 +52,7 @@ export function AdminModels() {
     model: "",
     temperature: 0.5,
     max_tokens: 2048,
+    role_card: emptyRoleCard(),
   });
 
   const [editingDirector, setEditingDirector] = useState(false);
@@ -58,6 +61,7 @@ export function AdminModels() {
     model: "",
     temperature: 0.3,
     max_tokens: 4096,
+    role_card: emptyRoleCard(),
   });
 
   const { data: settings } = useQuery({
@@ -130,6 +134,7 @@ export function AdminModels() {
         model: "",
         temperature: 0.5,
         max_tokens: 2048,
+        role_card: emptyRoleCard(),
       });
     },
   });
@@ -258,6 +263,7 @@ export function AdminModels() {
                   model: settings.director?.model || "",
                   temperature: settings.director?.temperature ?? 0.3,
                   max_tokens: settings.director?.max_tokens ?? 4096,
+                  role_card: settings.director?.role_card || emptyRoleCard(),
                 });
               }}
             >
@@ -314,6 +320,7 @@ export function AdminModels() {
                   }
                 />
               </div>
+              <RoleCardEditor value={directorForm.role_card} onChange={role_card => setDirectorForm({...directorForm, role_card})}/>
               <div className="flex gap-2 justify-end">
                 <Button
                   variant="ghost"
@@ -346,6 +353,7 @@ export function AdminModels() {
                 <div className="text-xs text-[#617991] mb-1">النموذج</div>
                 <div className="font-medium">{settings.director?.model}</div>
               </div>
+              <div className="col-span-2"><RoleCardSummary value={settings.director?.role_card}/></div>
             </div>
           )}
         </CardContent>
@@ -371,7 +379,9 @@ export function AdminModels() {
                 <h4 className="font-bold text-sm">إضافة نموذج جديد</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <Input
-                    placeholder="اسم النموذج (مثال: creative)"
+                    placeholder="معرف الدور (مثال: programmer)"
+                    aria-label="معرف الدور الجديد"
+                    maxLength={64}
                     value={newWorkerForm.name}
                     onChange={(e) =>
                       setNewWorkerForm({
@@ -411,6 +421,8 @@ export function AdminModels() {
                     }
                   />
                 </div>
+                <p className="text-xs muted">معرف الدور: أحرف إنجليزية صغيرة وأرقام وشرطة فقط، يبدأ بحرف ولا يستخدم الاسم director.</p>
+                <RoleCardEditor value={newWorkerForm.role_card} onChange={role_card => setNewWorkerForm({...newWorkerForm, role_card})}/>
                 <div className="flex gap-2 justify-end">
                   <Button
                     variant="ghost"
@@ -423,6 +435,7 @@ export function AdminModels() {
                     size="sm"
                     onClick={() => addWorker.mutate(newWorkerForm)}
                     isLoading={addWorker.isPending}
+                    disabled={!/^[a-z][a-z0-9_-]{0,63}$/.test(newWorkerForm.name) || newWorkerForm.name === "director" || !newWorkerForm.provider || !newWorkerForm.model}
                   >
                     حفظ الإضافة
                   </Button>
@@ -482,6 +495,7 @@ export function AdminModels() {
                         }
                       />
                     </div>
+                    <RoleCardEditor value={workerForm.role_card} onChange={role_card => setWorkerForm({...workerForm, role_card})}/>
                     <div className="flex gap-2 justify-end">
                       <Button
                         variant="ghost"
@@ -504,17 +518,18 @@ export function AdminModels() {
                 ) : (
                   <div
                     key={key}
-                    className="flex justify-between items-center bg-[#edf6fc] p-4 rounded-lg border border-[#cbddea]"
+                    className="flex flex-col sm:flex-row justify-between items-start gap-4 bg-[#edf6fc] p-4 rounded-lg border border-[#cbddea]"
                   >
-                    <div>
-                      <div className="font-medium capitalize flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium capitalize flex flex-wrap items-center gap-2">
                         {key}
                         <Badge variant="outline">{worker.provider}</Badge>
                       </div>
                       <div className="text-sm text-[#617991] mt-1">
-                        {worker.model} <span className="mx-2">•</span> الحرارة:{" "}
+                        <span className="break-all">{worker.model}</span> <span className="mx-2">•</span> الحرارة:{" "}
                         {worker.temperature}
                       </div>
+                      <RoleCardSummary value={worker.role_card}/>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -527,6 +542,7 @@ export function AdminModels() {
                             model: worker.model,
                             temperature: worker.temperature,
                             max_tokens: worker.max_tokens,
+                            role_card: worker.role_card || emptyRoleCard(),
                           });
                         }}
                       >
