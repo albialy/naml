@@ -19,6 +19,7 @@ import {
   X,
   Shield,
   Home,
+  Globe,
 } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import { apiClient } from "../../api/client";
@@ -41,6 +42,7 @@ export function AppLayout() {
     { to: "/", label: "الرئيسية", icon: Home },
     { to: "/history", label: "المحادثات", icon: MessageSquare },
     { to: "/projects", label: "المشاريع", icon: FolderOpen },
+    { to: "/browser", label: "المتصفح", icon: Globe },
     { to: "/settings", label: "الإعدادات", icon: Settings },
   ];
   return (
