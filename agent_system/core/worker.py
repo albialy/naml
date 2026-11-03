@@ -136,6 +136,10 @@ HANDOFF: [what the next agent most needs to know]
                 if not results:
                     response = "Error: لم يرجع البحث مصادر؛ لا توجد أدلة خارجية لهذا السؤال"
                 else:
+                    from agent_system.core.browser_client import enrich_results
+                    results = enrich_results(results)
+                    if getattr(self.shared_memory, "_runtime", None):
+                        self.shared_memory._runtime.check()
                     evidence = format_evidence(results)
                     synth_prompt = f"""You are {self.name}, a research synthesizer.
 
