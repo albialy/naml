@@ -14,8 +14,18 @@ export function BrowserPage() {
   const status = useQuery({ queryKey: ['browser-status'], queryFn: async () => (await apiClient.get('/browser/status')).data });
   async function run(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setError(''); setResult(null);
-    try { setResult((await apiClient.post('/browser/capture', { [mode]: mode === 'url' ? url : html, mobile }, { timeout: 45000 })).data); }
-    catch (e: any) { setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'تعذر عرض الصفحة. راجع الرابط واتصال خدمة المتصفح.'); }
+    try { setResult((await apiClient.post('/browser/capture', { [mode]: mode === 'url' ? url : html, mobile }, { timeout: 125000 })).data); }
+    catch (e: any) {
+      const data = e.response?.data;
+      const detail = typeof data?.detail === 'string' ? data.detail : null;
+      const trace = typeof data?.request_id === 'string' && /^[0-9a-f]{12}$/.test(data.request_id) ? ` رقم التشخيص: ${data.request_id}` : '';
+      if (detail) setError(detail + trace);
+      else if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') setError('انتهت مهلة انتظار الرد. قد تكون الخدمة تستيقظ أو لا تستجيب. أعد المحاولة بعد قليل.');
+      else if (e.response?.status === 401) setError('انتهت جلسة الدخول. سجل الدخول مجددًا.');
+      else if (e.response?.status === 422) setError('تحقق من الرابط أو كود HTML المدخل.');
+      else if (e.response) setError(`لم يُرجع خادم نمل نتيجة صالحة (HTTP ${e.response.status}). راجع سجل خدمة naml وقت المحاولة.`);
+      else setError('انقطع الاتصال بخادم نمل قبل وصول الرد. تحقق من اتصال الإنترنت ثم أعد المحاولة.');
+    }
     finally { setBusy(false); }
   }
   return <section className="max-w-5xl mx-auto space-y-6">
@@ -27,6 +37,7 @@ export function BrowserPage() {
       {mode === 'url' ? <label className="block">رابط الصفحة<input required type="url" maxLength={4096} dir="ltr" placeholder="https://example.com" value={url} onChange={e=>setUrl(e.target.value)} className="w-full border rounded-xl p-3 mt-2"/></label> : <label className="block">كود التصميم<textarea required maxLength={200000} dir="ltr" rows={9} value={html} onChange={e=>setHtml(e.target.value)} className="w-full border rounded-xl p-3 mt-2 font-mono text-sm"/><span className="text-xs muted">معاينة HTML وCSS فقط، دون تشغيل JavaScript أو تحميل موارد خارجية.</span></label>}
       <label className="flex items-center gap-2"><input type="checkbox" checked={mobile} onChange={e=>setMobile(e.target.checked)}/>عرض بحجم الهاتف</label>
       <button disabled={busy || !status.data?.configured} className="rounded-xl bg-sky-600 text-white px-6 py-3 disabled:opacity-50">{busy ? 'جارٍ فتح الصفحة…' : 'قراءة وتصوير'}</button>
+      {busy && <p role="status" className="text-sm muted">قد تستغرق أول محاولة نحو دقيقتين إذا كانت الخدمة متوقفة مؤقتًا. انتظر اكتمال الطلب.</p>}
       <p className="text-xs muted">اللقطة للجزء الظاهر من الصفحة. بعض المواقع قد تمنع التصفح الآلي أو تعرض محتوى ناقصًا.</p>
     </form>
     {error && <p role="alert" className="bg-red-50 p-4 rounded-xl">{error}</p>}
