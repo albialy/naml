@@ -3,18 +3,45 @@ import asyncio
 import base64
 import hmac
 import ipaddress
+import logging
 import os
+import re
 import socket
+import time
+import uuid
 from urllib.parse import urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
 from fastapi import FastAPI, Header, HTTPException, Depends
 from pydantic import BaseModel, Field, model_validator
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
 app = FastAPI(docs_url=None, redoc_url=None)
 slot = asyncio.Semaphore(1)
+logger = logging.getLogger("uvicorn.error")
+
+
+class CaptureFailure(Exception):
+    def __init__(self, code, site_status=None):
+        super().__init__(code)
+        self.code = code
+        self.site_status = site_status
+
+
+def network_failure(exc):
+    # Never send exception strings: they can contain URLs, cookies or credentials.
+    if isinstance(exc, CaptureFailure):
+        return exc
+    if isinstance(exc, aiohttp.ClientSSLError):
+        return CaptureFailure("site_tls_error")
+    if isinstance(exc, aiohttp.ClientConnectorDNSError):
+        return CaptureFailure("site_dns_error")
+    if isinstance(exc, (TimeoutError, PlaywrightTimeout)):
+        return CaptureFailure("site_timeout")
+    if isinstance(exc, ValueError):
+        return CaptureFailure("url_blocked")
+    return CaptureFailure("site_connection_error")
 
 
 def check_url(url):
@@ -44,7 +71,7 @@ class PublicResolver(AbstractResolver):
         for af, _, proto, _, sockaddr in rows:
             ip = ipaddress.ip_address(sockaddr[0])
             if not ip.is_global or ip.is_multicast or (isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped):
-                raise OSError("Private DNS answer blocked")
+                raise CaptureFailure("url_blocked")
             result.append(dict(hostname=host, host=str(ip), port=port, family=af, proto=proto, flags=socket.AI_NUMERICHOST))
         return result
 
@@ -82,16 +109,20 @@ def health():
 
 async def render(spec: Capture):
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(chromium_sandbox=True, args=["--disable-dev-shm-usage", "--disable-quic", "--disable-background-networking", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"])
+        try:
+            browser = await pw.chromium.launch(chromium_sandbox=True, args=["--disable-dev-shm-usage", "--disable-quic", "--disable-background-networking", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"])
+        except Exception as exc:
+            raise CaptureFailure("browser_start_failed") from exc
         try:
             context = await browser.new_context(viewport={"width": 390 if spec.mobile else 1360, "height": 844 if spec.mobile else 900},
                 service_workers="block", accept_downloads=False, java_script_enabled=not bool(spec.html))
             await context.route_web_socket("**/*", lambda ws: ws.close())
             connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
             count, total, blocked = 0, 0, 0
+            main_failure = None
             async with aiohttp.ClientSession(connector=connector, trust_env=False, cookie_jar=aiohttp.DummyCookieJar(), timeout=aiohttp.ClientTimeout(total=10)) as http:
                 async def route_request(route):
-                    nonlocal count, total, blocked
+                    nonlocal count, total, blocked, main_failure
                     count += 1
                     try:
                         req = route.request
@@ -105,18 +136,25 @@ async def render(spec: Capture):
                                 total += len(chunk)
                                 body.extend(chunk)
                                 if len(body) > 2000000 or total > 12000000:
-                                    raise ValueError("Page too large")
+                                    raise CaptureFailure("page_too_large")
                             headers = {k: v for k, v in response.headers.items() if k.lower() in ("content-type", "location")}
                             await route.fulfill(status=response.status, headers=headers, body=bytes(body))
-                    except Exception:
+                    except Exception as exc:
                         blocked += 1
+                        if route.request.is_navigation_request() and route.request.frame == page.main_frame:
+                            main_failure = network_failure(exc)
                         await route.abort()
                 await context.route("**/*", route_request)
                 page = await context.new_page()
                 if spec.url:
-                    response = await page.goto(spec.url, wait_until="domcontentloaded", timeout=18000)
+                    try:
+                        response = await page.goto(spec.url, wait_until="domcontentloaded", timeout=18000)
+                    except Exception:
+                        if main_failure:
+                            raise main_failure from None
+                        raise
                     if response and response.status >= 400:
-                        raise ValueError("Website returned an error")
+                        raise CaptureFailure("site_http_error", response.status)
                     await page.wait_for_timeout(800)
                 else:
                     await page.set_content(spec.html, wait_until="domcontentloaded", timeout=5000)
@@ -131,14 +169,26 @@ async def render(spec: Capture):
 
 
 @app.post("/capture", dependencies=[Depends(authorize)])
-async def capture(spec: Capture):
+async def capture(spec: Capture, x_request_id: str = Header(default="")):
+    request_id = x_request_id if re.fullmatch(r"[0-9a-f]{12}", x_request_id) else uuid.uuid4().hex[:12]
+    started = time.monotonic()
     try:
         await asyncio.wait_for(slot.acquire(), timeout=0.1)
     except TimeoutError:
         raise HTTPException(429, "Browser busy")
     try:
         return await asyncio.wait_for(render(spec), timeout=30)
-    except Exception:
-        raise HTTPException(502, "Browser capture failed")
+    except Exception as exc:
+        if isinstance(exc, CaptureFailure):
+            code = exc.code
+        elif isinstance(exc, (TimeoutError, PlaywrightTimeout)):
+            code = "render_timeout"
+        else:
+            code = "render_failed"
+        detail = {"code": code, "request_id": request_id}
+        if isinstance(exc, CaptureFailure) and exc.site_status:
+            detail["site_status"] = exc.site_status
+        logger.warning("browser_capture_failed request_id=%s code=%s exception=%s elapsed=%.1fs", request_id, code, type(exc).__name__, time.monotonic() - started)
+        raise HTTPException(502, detail) from None
     finally:
         slot.release()
