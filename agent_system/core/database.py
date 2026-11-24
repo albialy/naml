@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+from agent_system.core import conversation_state as chat
 
 load_dotenv()
 
@@ -114,17 +115,27 @@ class Database:
         conversation = self._get(conn, key)
         if not conversation:
             return
-        if conversation.get("active_session_id") == data["session_id"]:
-            conversation["status"] = data.get("status", "pending")
-            conversation["updated_at"] = now()
-        if data.get("status") in ("complete", "failed"):
+        chat.initialize(conversation)
+        branch_id = data.get("branch_id") or "main"
+        branch = conversation["branches"].get(branch_id)
+        if branch is None:
+            return
+        previous_status = branch.get("status")
+        if branch.get("active_session_id") == data["session_id"]:
+            branch["status"] = data.get("status", "pending")
+        if data.get("status") in chat.TERMINAL:
             message_id = data["session_id"] + ":assistant"
             message = {"id": message_id, "role": "assistant", "content": data.get("final_synthesis", ""), "session_id": data["session_id"], "created_at": data.get("completed_at") or now(), "status": data["status"], "confidence": data.get("confidence_final", 0), "execution": data.get("execution", {}), "warnings": data.get("warnings", [])}
-            existing = next((m for m in conversation["messages"] if m["id"] == message_id), None)
+            existing = next((m for m in branch["messages"] if m["id"] == message_id), None)
             if existing:
                 existing.update(message)
             else:
-                conversation["messages"].append(message)
+                branch["messages"].append(message)
+        if conversation["branch_id"] == branch_id:
+            chat.activate(conversation, branch_id)
+            conversation["updated_at"] = now()
+            if previous_status != branch.get("status") and data.get("status") in chat.TERMINAL:
+                conversation["revision"] += 1
         self._put(conn, key, conversation)
 
     def save_session(self, data):
@@ -132,8 +143,16 @@ class Database:
             cid = data.get("conversation_id")
             if cid:
                 self.lock(conn, "conversation:" + cid)
+            row = self.execute(conn, "SELECT data FROM naml_sessions WHERE session_id=?", (data["session_id"],)).fetchone()
+            # Deleted turns must not be resurrected by a late background writer.
+            if cid and not row:
+                return False
+            # Cancellation is durable and wins against every late worker write.
+            if row and json.loads(row[0]).get("status") == "cancelled":
+                return False
             self._save_session(conn, data)
             self._update_conversation(conn, data)
+            return True
 
     def get_session(self, session_id):
         with self.connection() as conn:
@@ -164,30 +183,104 @@ class Database:
                 if conversation:
                     if conversation.get("active_session_id") == session_id and conversation.get("status") in ("pending", "running", "synthesizing"):
                         raise ConversationBusy("Cannot delete an active analysis")
-                    conversation["messages"] = [m for m in conversation["messages"] if m.get("session_id") != session_id]
-                    remaining = [m for m in conversation["messages"] if m["role"] == "user"]
-                    if remaining:
-                        conversation["active_session_id"] = remaining[-1]["session_id"]
+                    chat.initialize(conversation)
+                    # A fork may share earlier messages. Deletion removes that turn
+                    # consistently from every saved branch, including references.
+                    for branch in conversation["branches"].values():
+                        branch["messages"] = [m for m in branch["messages"] if m.get("session_id") != session_id]
+                        for message in branch["messages"]:
+                            if message.get("reference", {}).get("message_id", "").startswith(session_id + ":"):
+                                message.pop("reference", None)
+                        if branch.get("active_session_id") == session_id:
+                            remaining = [m for m in branch["messages"] if m["role"] == "user"]
+                            branch["active_session_id"] = remaining[-1]["session_id"] if remaining else None
+                            branch["status"] = "complete"
+                    if any(b["messages"] for b in conversation["branches"].values()):
+                        chat.activate(conversation, conversation["branch_id"])
+                        conversation["revision"] += 1
                         self._put(conn, key, conversation)
                     else:
                         self.execute(conn, "DELETE FROM naml_documents WHERE key=?", (key,))
             return self.execute(conn, "DELETE FROM naml_sessions WHERE session_id=?", (session_id,)).rowcount > 0
 
-    def start_turn(self, data, conversation_id=None, project_id=None):
+    def _conversation_for_write(self, conn, cid, user_id, revision=None, branch_id=None):
+        self.lock(conn, "conversation:" + cid)
+        conversation = self._get(conn, "conversation:" + cid)
+        if not conversation:
+            raise KeyError("المحادثة غير موجودة")
+        if conversation["user_id"] != user_id:
+            raise PermissionError("لا يمكنك تعديل محادثة مستخدم آخر")
+        chat.initialize(conversation)
+        if (revision is not None and revision != conversation["revision"]) or (branch_id and branch_id != conversation["branch_id"]):
+            raise ConversationBusy("تغيرت المحادثة في نافذة أخرى. حدّثها ثم أعد المحاولة.")
+        return conversation
+
+    def _cancel_turn(self, conn, conversation, session_id):
+        if conversation.get("active_session_id") != session_id:
+            raise ConversationBusy("تغير الرد الجاري. حدّث المحادثة قبل الإيقاف.")
+        if conversation.get("status") not in chat.ACTIVE:
+            return
+        row = self.execute(conn, "SELECT data FROM naml_sessions WHERE session_id=?", (session_id,)).fetchone()
+        if not row:
+            raise KeyError("الرد غير موجود")
+        data = json.loads(row[0])
+        data.update(status="cancelled", completed_at=now(), final_synthesis="تم إيقاف الرد بناءً على طلبك.")
+        self._save_session(conn, data)
+        conversation["status"] = "cancelled"
+        conversation["updated_at"] = now()
+        conversation["revision"] += 1
+        conversation["messages"].append({"id": session_id + ":assistant", "role": "assistant", "content": data["final_synthesis"], "status": "cancelled", "session_id": session_id, "created_at": data["completed_at"]})
+        chat.stash(conversation)
+
+    def cancel_turn(self, cid, user_id, session_id, revision, branch_id):
+        with self.connection(write=True) as conn:
+            conversation = self._conversation_for_write(conn, cid, user_id, revision, branch_id)
+            self._cancel_turn(conn, conversation, session_id)
+            self._put(conn, "conversation:" + cid, conversation)
+            return chat.public(conversation)
+
+    def switch_branch(self, cid, user_id, target, revision):
+        with self.connection(write=True) as conn:
+            conversation = self._conversation_for_write(conn, cid, user_id, revision)
+            if conversation.get("status") in chat.ACTIVE:
+                raise ConversationBusy("أوقف الرد الجاري أو انتظر اكتماله قبل تغيير المسار.")
+            chat.activate(conversation, target)
+            conversation["revision"] += 1
+            conversation["updated_at"] = now()
+            self._put(conn, "conversation:" + cid, conversation)
+            return chat.public(conversation)
+
+    def start_turn(self, data, conversation_id=None, project_id=None, *, action="send", message_id=None,
+                   expected_revision=None, branch_id=None, interrupt_session_id=None, reference=None):
         cid = conversation_id or str(uuid.uuid4())
         key = "conversation:" + cid
+        data = copy.deepcopy(data)
         with self.connection(write=True) as conn:
             self.lock(conn, key)
-            conversation = self._get(conn, key)
-            if conversation_id and conversation is None:
-                raise KeyError("Conversation not found")
-            if conversation:
-                if conversation["user_id"] != data["user_id"]:
-                    raise PermissionError("Access denied")
-                if conversation.get("status") in ("pending", "running", "synthesizing"):
-                    raise ConversationBusy("This conversation already has an active analysis")
+            if conversation_id:
+                conversation = self._conversation_for_write(conn, cid, data["user_id"], expected_revision, branch_id)
+                if interrupt_session_id:
+                    self._cancel_turn(conn, conversation, interrupt_session_id)
+                if conversation.get("status") in chat.ACTIVE:
+                    raise ConversationBusy("انتظر اكتمال الرد أو استخدم إيقاف وإرسال التوجيه.")
             else:
+                if action != "send" or message_id or interrupt_session_id or reference:
+                    raise ValueError("هذا الإجراء يحتاج محادثة موجودة")
                 conversation = {"conversation_id": cid, "user_id": data["user_id"], "title": data["task_original"][:100], "created_at": data["created_at"], "updated_at": data["created_at"], "messages": []}
+                chat.initialize(conversation)
+            if action in ("edit", "retry"):
+                target = chat.fork(conversation, message_id, action, data["created_at"])
+                if action == "retry":
+                    data["task_original"] = target["content"]
+                if reference is None:
+                    reference = target.get("reference")
+            elif action != "send":
+                raise ValueError("إجراء غير مدعوم")
+            if reference:
+                source = next((m for m in conversation["messages"] if m["id"] == reference["message_id"]), None)
+                if not source or not reference["text"].strip() or reference["text"] not in source["content"]:
+                    raise ValueError("النص المحدد غير موجود في هذا المسار. أعد تحديده.")
+                data["reference"] = copy.deepcopy(reference)
             linked = conversation.get("project_id")
             if linked and project_id and linked != project_id:
                 raise ValueError("المحادثة مرتبطة بمشروع آخر")
@@ -199,27 +292,28 @@ class Database:
                     raise KeyError("المشروع غير موجود")
                 conversation["project_id"] = project_id
                 from agent_system.core.projects import project_context
-                data = copy.deepcopy(data)
                 data["project_context"] = project_context(project)
-            data = copy.deepcopy(data)
             data["project_id"] = project_id
-            history = [{"role": m["role"], "content": m["content"]} for m in conversation["messages"] if m.get("status") != "failed"]
-            data = copy.deepcopy(data)
-            data.update(conversation_id=cid, chat_history=history[-20:])
-            conversation["messages"].append({"id": data["session_id"] + ":user", "role": "user", "content": data["task_original"], "session_id": data["session_id"], "created_at": data["created_at"]})
-            conversation.update(active_session_id=data["session_id"], status="pending", updated_at=now())
+            history = [{"role": m["role"], "content": m["content"]} for m in conversation["messages"] if m.get("status") not in ("failed", "cancelled")]
+            data.update(conversation_id=cid, branch_id=conversation["branch_id"], chat_history=history[-40:])
+            message = {"id": data["session_id"] + ":user", "role": "user", "content": data["task_original"], "session_id": data["session_id"], "created_at": data["created_at"], "response_detail": data.get("response_detail", "auto")}
+            if reference:
+                message["reference"] = reference
+            conversation["messages"].append(message)
+            conversation.update(active_session_id=data["session_id"], status="pending", updated_at=now(), revision=conversation["revision"] + 1)
+            chat.stash(conversation)
             self._put(conn, key, conversation)
             self._save_session(conn, data)
             return data
 
     def get_conversation(self, cid):
-        return self.get_document("conversation:" + cid)
+        return chat.public(self.get_document("conversation:" + cid))
 
     def list_conversations(self, user_id):
         with self.connection() as conn:
             rows = self.execute(conn, "SELECT data FROM naml_documents WHERE key LIKE ?", ("conversation:%",)).fetchall()
             conversations = [json.loads(row[0]) for row in rows]
-        summaries = [{k: v for k, v in c.items() if k != "messages"} | {"message_count": len(c["messages"])} for c in conversations if c["user_id"] == user_id]
+        summaries = [chat.public(c, summary=True) for c in conversations if c["user_id"] == user_id]
         return sorted(summaries, key=lambda c: c["updated_at"], reverse=True)
 
     def import_legacy(self, directory):

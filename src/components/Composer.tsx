@@ -9,14 +9,31 @@ export function Composer({
   placeholder = "اكتب رسالتك هنا...",
   error,
   prefill,
+  resetKey,
+  draftKey,
+  running = false,
+  onInterrupt,
 }: {
   onSend: (text: string, detail: ResponseDetail) => void;
   busy?: boolean;
   placeholder?: string;
   error?: string;
   prefill?: string;
+  resetKey?: number;
+  draftKey?: string;
+  running?: boolean;
+  onInterrupt?: (text: string, detail: ResponseDetail) => void;
 }) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => {
+    try { return draftKey ? sessionStorage.getItem(draftKey) || "" : ""; } catch { return ""; }
+  });
+  const previousReset = useRef(resetKey);
+  useEffect(() => {
+    if (previousReset.current !== resetKey) { setText(""); setFileError(""); previousReset.current = resetKey; }
+  }, [resetKey]);
+  useEffect(() => {
+    if (draftKey) { try { sessionStorage.setItem(draftKey, text); } catch { /* Draft storage may be disabled. */ } }
+  }, [text, draftKey]);
   const [detail, setDetail] = useState<ResponseDetail>("auto");
   useEffect(() => {
     if (prefill) setText(prefill);
@@ -27,13 +44,16 @@ export function Composer({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (text.trim() && !busy) onSend(text.trim(), detail);
+        if (text.trim() && !busy) {
+          if (running && onInterrupt) onInterrupt(text.trim(), detail);
+          else if (!running) onSend(text.trim(), detail);
+        }
       }}
       className="glass rounded-3xl p-4 md:p-5"
     >
       <textarea
         aria-label="رسالتك"
-        className="w-full min-h-28 resize-y bg-transparent outline-none text-base leading-8"
+        className="w-full min-h-20 max-h-64 resize-y bg-transparent outline-none text-base leading-8"
         maxLength={20000}
         placeholder={placeholder}
         value={text}
@@ -42,7 +62,7 @@ export function Composer({
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
             e.preventDefault();
-            if (!e.repeat && text.trim() && !busy) e.currentTarget.form?.requestSubmit();
+            if (!e.repeat && text.trim() && !busy && !running) e.currentTarget.form?.requestSubmit();
           }
         }}
       />
@@ -106,11 +126,11 @@ export function Composer({
         </div>
         <Button type="submit" disabled={busy || !text.trim()} isLoading={busy}>
           <Send size={17} />
-          {busy ? "جارٍ العمل" : "إرسال"}
+          {busy ? "جارٍ الإرسال" : running ? "إيقاف وإرسال التوجيه" : "إرسال"}
         </Button>
       </div>
       <p className="text-xs muted mt-3">
-        Enter للإرسال · Shift+Enter لسطر جديد · إرفاق TXT، MD، CSV
+        {running ? "اكتب توجيهك، ثم اضغط إيقاف وإرسال التوجيه لاستكمال الحوار به." : "Enter للإرسال · Shift+Enter لسطر جديد · إرفاق TXT، MD، CSV"}
       </p>
       {(error || fileError) && (
         <p role="alert" className="text-red-700 text-sm mt-3">

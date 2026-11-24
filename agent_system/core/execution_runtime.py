@@ -13,6 +13,10 @@ class ExecutionLimit(RuntimeError):
     pass
 
 
+class ExecutionCancelled(RuntimeError):
+    pass
+
+
 class ProviderBusy(RuntimeError):
     pass
 
@@ -74,7 +78,14 @@ class ExecutionRuntime:
         with self.lock:
             return self.policy.max_model_calls - len(self.calls)
 
+    def check_cancelled(self):
+        from agent_system.core.database import get_database
+        saved = get_database().get_session(self.memory.session_id)
+        if saved and saved.get("status") == "cancelled":
+            raise ExecutionCancelled("تم إيقاف الرد بناءً على طلبك.")
+
     def check(self):
+        self.check_cancelled()
         if time.monotonic() >= self.deadline:
             raise ExecutionLimit("انتهت مهلة العمل؛ قلل نطاق الطلب أو ارفع المهلة من إعدادات التنفيذ.")
         if self.remaining_calls <= 0:
@@ -97,6 +108,7 @@ class ExecutionRuntime:
                     max_tokens = min(max_tokens, getattr(connector, "max_tokens_limit", max_tokens))
                 answer = connector.complete(system_prompt=system_prompt, user_message=user_message,
                                             temperature=temperature, max_tokens=max_tokens)
+                self.check_cancelled()
                 metadata = getattr(connector, "last_result", {}) or {}
                 metadata["served_by"] = {"provider": provider, "model": model}
                 connector.last_result = metadata
@@ -108,6 +120,10 @@ class ExecutionRuntime:
                 if metadata.get("status_code") == 429:
                     PROVIDER_GATE.pause(provider, model, metadata.get("retry_after") or 30)
                 return answer, metadata.get("status_code")
+            except ExecutionCancelled:
+                with self.lock:
+                    row["status"] = "cancelled"
+                raise
             except Exception:
                 with self.lock:
                     row["status"] = "failed"

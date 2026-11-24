@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 import datetime
 from agent_system.core.memory import SharedMemory
@@ -13,14 +13,35 @@ from agent_system.core.database import get_database, ConversationBusy
 router = APIRouter()
 director = Director()
 
+class Reference(BaseModel):
+    message_id: str = Field(min_length=1, max_length=100)
+    text: str = Field(min_length=1, max_length=6000)
+
 class TaskRequest(BaseModel):
     task: str = Field(min_length=1, max_length=20000)
     conversation_id: Optional[str] = None
     project_id: Optional[str] = None
     response_detail: Literal["auto", "brief", "detailed"] = "auto"
+    action: Literal["send", "edit", "retry"] = "send"
+    message_id: Optional[str] = Field(default=None, max_length=100)
+    branch_id: Optional[str] = Field(default=None, max_length=100)
+    expected_revision: Optional[int] = Field(default=None, ge=0)
+    interrupt_session_id: Optional[str] = Field(default=None, max_length=100)
+    reference: Optional[Reference] = None
+
+    @model_validator(mode="after")
+    def check_action(self):
+        if self.action != "send" and (not self.conversation_id or not self.message_id or self.expected_revision is None or not self.branch_id):
+            raise ValueError("تعديل الرسائل يحتاج المحادثة والرسالة والمسار ونسخة المحادثة")
+        if self.interrupt_session_id and (self.action != "send" or not self.conversation_id or self.expected_revision is None or not self.branch_id):
+            raise ValueError("الإيقاف وإعادة التوجيه يحتاج المحادثة والمسار ونسخة المحادثة")
+        return self
 
 def run_task_background(task: str, memory: SharedMemory):
     try:
+        saved = get_database().get_session(memory.session_id)
+        if saved and saved.get("status") == "cancelled":
+            return
         runner = Director(settings_override=memory.run_settings) if memory.run_settings else director
         runner.run(task, memory)
     except Exception as e:
@@ -28,6 +49,9 @@ def run_task_background(task: str, memory: SharedMemory):
         memory.final_synthesis = str(e)
         memory.save_to_file()
 
+    saved = get_database().get_session(memory.session_id)
+    if saved and saved.get("status") == "cancelled":
+        return
     if (memory.status == "complete" and memory.project_id
             and memory.execution.get("route") not in ("direct", "clarify")
             and memory.execution.get("project_relevant") is True):
@@ -71,17 +95,23 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks, c
     memory = SharedMemory(task_original=request.task, user_id=current_user.id)
     memory.response_detail = request.response_detail
     try:
-        saved = get_database().start_turn(memory.to_dict(), request.conversation_id, request.project_id)
+        saved = get_database().start_turn(memory.to_dict(), request.conversation_id, request.project_id,
+            action=request.action, message_id=request.message_id, expected_revision=request.expected_revision,
+            branch_id=request.branch_id, interrupt_session_id=request.interrupt_session_id,
+            reference=request.reference.model_dump() if request.reference else None)
     except KeyError:
         raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
     except PermissionError:
         raise HTTPException(status_code=403, detail="لا يمكنك متابعة محادثة مستخدم آخر")
-    except ConversationBusy:
-        raise HTTPException(status_code=409, detail="انتظر اكتمال الرد الحالي قبل إرسال رسالة جديدة")
+    except ConversationBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     memory.conversation_id = saved["conversation_id"]
     memory.chat_history = saved["chat_history"]
+    memory.task_original = saved["task_original"]
+    memory.branch_id = saved["branch_id"]
+    memory.reference = saved.get("reference")
     memory.project_id = saved.get("project_id")
     memory.project_context = saved.get("project_context", "")
     from agent_system.core.projects import model_settings, get_project
@@ -91,7 +121,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks, c
 
     auth_manager._log_activity("SUBMIT_TASK", current_user.id, memory.session_id)
 
-    background_tasks.add_task(run_task_background, request.task, memory)
+    background_tasks.add_task(run_task_background, memory.task_original, memory)
 
     return {"session_id": memory.session_id, "conversation_id": memory.conversation_id, "status": "started"}
 
@@ -110,7 +140,7 @@ async def get_task_result(session_id: str, current_user: User = Depends(get_curr
         raise HTTPException(status_code=404, detail={"error": "Session not found", "code": "NOT_FOUND"})
     _check_user_access(data, current_user)
 
-    if data.get("status") != "complete" and data.get("status") != "failed":
+    if data.get("status") not in ("complete", "failed", "cancelled"):
         raise HTTPException(status_code=400, detail={"error": "Task not complete yet", "code": "NOT_COMPLETE"})
 
     return {

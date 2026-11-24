@@ -18,7 +18,7 @@ export interface AuthResponse {
 
 export interface TaskStatus {
   session_id: string;
-  status: "pending" | "running" | "synthesizing" | "complete" | "failed";
+  status: "pending" | "running" | "synthesizing" | "complete" | "failed" | "cancelled";
   user_id: string;
   task_original: string;
 }
@@ -60,6 +60,7 @@ export interface ConversationMessage {
   confidence?: number;
   execution?: ExecutionInfo;
   warnings?:string[];
+  reference?: { message_id: string; text: string };
 }
 
 export interface ExecutionInfo {
@@ -75,4 +76,7 @@ export interface ExecutionInfo {
 
 export interface Conversation extends ConversationSummary {
   messages: ConversationMessage[];
+  revision: number;
+  branch_id: string;
+  branches: { id: string; label: string; parent_id?: string; message_count: number }[];
 }

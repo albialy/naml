@@ -9,7 +9,7 @@ from agent_system.core.orchestrator import Orchestrator
 from agent_system.core.connectors.groq_connector import GroqConnector
 from agent_system.core.connectors.openrouter_connector import OpenRouterConnector
 from agent_system.core.execution_policy import policy_for, role_config, answer_style, ROUTER_PROMPT
-from agent_system.core.execution_runtime import ExecutionRuntime, TrackedConnector
+from agent_system.core.execution_runtime import ExecutionRuntime, TrackedConnector, ExecutionCancelled
 from agent_system.core.role_cards import planning_catalog, role_prompt
 
 DIRECTOR_SYSTEM_PROMPT = """Plan only the work needed for the user's actual request.
@@ -491,7 +491,11 @@ Check whether the answer satisfies the request and is supported by the evidence.
                         self._critic(memory)
             if not memory.final_synthesis.strip():
                 raise ValueError("لم ينتج النموذج إجابة صالحة")
+            memory._runtime.check_cancelled()
             memory.status = "complete"
+        except ExecutionCancelled:
+            memory.status = "cancelled"
+            memory.final_synthesis = "تم إيقاف الرد بناءً على طلبك."
         except Exception as exc:
             memory.status = "failed"
             memory.final_synthesis = "تعذر إكمال الطلب: " + str(exc)

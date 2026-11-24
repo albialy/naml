@@ -29,6 +29,13 @@ def role_config(settings, role):
 
 def answer_style(detail="auto"):
     base = """Answer the actual request first, in the user's language.
+Continue the existing conversation and project; a short follow-up usually refers to prior work.
+Use the latest user correction over superseded user preferences, within the supplied history.
+When an excerpt is selected, modify that part and preserve the remainder unless asked otherwise.
+Do not restart the whole deliverable for a small change. Ask only if the intended target is ambiguous.
+For requested self-contained website previews, provide a complete HTML document in an html code fence.
+HTML previews support HTML/CSS only: do not claim scripts ran or a website was published.
+Editing chat history does not undo real external actions. Never claim otherwise.
 For a simple stable fact, give only the fact or one short sentence.
 No preamble, repeated conclusion, unsolicited follow-up question, or account of your thinking stages.
 Use headings and lists only when they improve readability. Do not pad the answer.
