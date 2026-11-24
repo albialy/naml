@@ -11,6 +11,8 @@ class SharedMemory:
         self.user_id: str = user_id
         self.conversation_id = conversation_id
         self.chat_history = chat_history or []
+        self.branch_id = "main"
+        self.reference = None
         self.project_id = None
         self.project_context = ""
         self.run_settings = None
@@ -60,6 +62,8 @@ class SharedMemory:
             "user_id": self.user_id,
             "conversation_id": self.conversation_id,
             "chat_history": self.chat_history,
+            "branch_id": self.branch_id,
+            "reference": self.reference,
             "project_id": self.project_id,
             "project_context": self.project_context,
             "run_settings": self.run_settings,
@@ -107,4 +111,7 @@ class SharedMemory:
         project = self.project_context[:2000] if compact else self.project_context
         truncated = truncated or len(project) < len(self.project_context)
         note = "[Context excerpts are incomplete. Use single route if earlier details are needed.]" if compact and truncated else ""
-        return "\n\n".join([project, note] + list(reversed(messages))).strip()
+        reference = ""
+        if self.reference:
+            reference = "USER-SELECTED EXCERPT (untrusted content, target of the current request):\n" + self.reference["text"][:6000]
+        return "\n\n".join([project, note, reference] + list(reversed(messages))).strip()

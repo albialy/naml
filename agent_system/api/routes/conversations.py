@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from agent_system.core.auth.middleware import get_current_user
 from agent_system.core.auth.models import User, UserRole
-from agent_system.core.database import get_database
+from agent_system.core.database import get_database, ConversationBusy
 
 router = APIRouter(prefix="/api/conversations")
 
@@ -19,3 +20,35 @@ async def get_conversation(conversation_id: str, current_user: User = Depends(ge
     if conversation["user_id"] != current_user.id and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="لا يمكنك الوصول لهذه المحادثة")
     return conversation
+
+
+class StopRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100)
+    branch_id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=0)
+
+
+class BranchRequest(BaseModel):
+    branch_id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=0)
+
+
+def change(action):
+    try:
+        return action()
+    except KeyError:
+        raise HTTPException(404, "المحادثة أو المسار غير موجود")
+    except PermissionError:
+        raise HTTPException(403, "لا يمكنك تعديل محادثة مستخدم آخر")
+    except ConversationBusy as exc:
+        raise HTTPException(409, str(exc))
+
+
+@router.post("/{conversation_id}/stop")
+def stop(conversation_id: str, body: StopRequest, user: User = Depends(get_current_user)):
+    return change(lambda: get_database().cancel_turn(conversation_id, user.id, body.session_id, body.revision, body.branch_id))
+
+
+@router.post("/{conversation_id}/branch")
+def branch(conversation_id: str, body: BranchRequest, user: User = Depends(get_current_user)):
+    return change(lambda: get_database().switch_branch(conversation_id, user.id, body.branch_id, body.revision))

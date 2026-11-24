@@ -42,11 +42,12 @@ export function ResultPage() {
       return res.data;
     },
     refetchInterval: (query) => {
-      // If complete or failed, stop polling
+      // Terminal sessions include responses stopped from the conversation.
       if (
         query.state.data &&
         (query.state.data.status === "complete" ||
-          query.state.data.status === "failed")
+          query.state.data.status === "failed" ||
+          query.state.data.status === "cancelled")
       ) {
         return false;
       }
@@ -76,7 +77,7 @@ export function ResultPage() {
 
   const isComplete = sessionData?.status === "complete";
   const isRunning =
-    sessionData?.status && !["complete", "failed"].includes(sessionData.status);
+    sessionData?.status && !["complete", "failed", "cancelled"].includes(sessionData.status);
 
   if (isLoadingSession || isRunning) {
     return (
