@@ -23,7 +23,7 @@ export function BrowserPage() {
       else if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') setError('انتهت مهلة انتظار الرد. قد تكون الخدمة تستيقظ أو لا تستجيب. أعد المحاولة بعد قليل.');
       else if (e.response?.status === 401) setError('انتهت جلسة الدخول. سجل الدخول مجددًا.');
       else if (e.response?.status === 422) setError('تحقق من الرابط أو كود HTML المدخل.');
-      else if (e.response) setError(`لم يُرجع خادم نمل نتيجة صالحة (HTTP ${e.response.status}). راجع سجل خدمة naml وقت المحاولة.`);
+      else if (e.response) setError('تعذر تجهيز المعاينة. أعد المحاولة لاحقًا.');
       else setError('انقطع الاتصال بخادم نمل قبل وصول الرد. تحقق من اتصال الإنترنت ثم أعد المحاولة.');
     }
     finally { setBusy(false); }
@@ -31,7 +31,7 @@ export function BrowserPage() {
   return <section className="max-w-5xl mx-auto space-y-6">
     <header><h1 className="text-2xl font-bold">متصفح نمل</h1><p className="muted mt-2">اقرأ صفحة ويب، التقط صورتها، أو عاين تصميم HTML.</p></header>
     {status.isError && <p role="alert">تعذر التحقق من حالة الخدمة. حدّث الصفحة.</p>}
-    {status.data && !status.data.configured && <p className="bg-amber-50 p-4 rounded-xl">خدمة المتصفح لم تُفعّل بعد. يجب ربطها من إعدادات الخادم.</p>}
+    {status.data && !status.data.configured && <p className="bg-amber-50 p-4 rounded-xl">المعاينة غير متاحة حاليًا. حاول لاحقًا.</p>}
     <form onSubmit={run} className="bg-white/80 rounded-2xl p-5 space-y-4">
       <div className="flex flex-wrap gap-3"><button type="button" aria-pressed={mode === 'url'} onClick={() => {setMode('url');setResult(null);}} className={`rounded-xl px-4 py-2 ${mode === 'url' ? 'bg-sky-100' : ''}`}>رابط موقع</button><button type="button" aria-pressed={mode === 'html'} onClick={() => {setMode('html');setResult(null);}} className={`rounded-xl px-4 py-2 ${mode === 'html' ? 'bg-sky-100' : ''}`}>معاينة HTML</button></div>
       {mode === 'url' ? <label className="block">رابط الصفحة<input required type="url" maxLength={4096} dir="ltr" placeholder="https://example.com" value={url} onChange={e=>setUrl(e.target.value)} className="w-full border rounded-xl p-3 mt-2"/></label> : <label className="block">كود التصميم<textarea required maxLength={200000} dir="ltr" rows={9} value={html} onChange={e=>setHtml(e.target.value)} className="w-full border rounded-xl p-3 mt-2 font-mono text-sm"/><span className="text-xs muted">معاينة HTML وCSS فقط، دون تشغيل JavaScript أو تحميل موارد خارجية.</span></label>}

@@ -5,6 +5,7 @@ import { Button } from "./ui/Button";
 import { apiError } from "../types/project";
 
 interface Policy {
+  shared_worker_model: boolean;
   router_role: string; single_role: string; research_role: string; critic_role: string; fallback_role: string;
   max_model_calls: number; time_budget_seconds: number; provider_concurrency: number; parallel_workers: number; router_max_tokens: number;
 }
@@ -40,7 +41,7 @@ export function ExecutionSettings({settings}: {settings: {execution: Policy; dir
     </div>
     <div className="grid md:grid-cols-2 gap-4">
       {fields.map(([key, label]) => <label key={key} className="text-sm space-y-2"><span>{label}</span>
-        <select aria-label={label} className="glass-input" value={value[key]} onChange={e => setValue({...value, [key]: e.target.value})}>
+        <select aria-label={label} className="glass-input" value={String(value[key])} onChange={e => setValue({...value, [key]: e.target.value})}>
           {key === "fallback_role" && <option value="">بدون تحويل تلقائي</option>}
           {Object.entries(roles).map(([name, model]) => <option key={name} value={name}>{roleLabels[name] || name} · {model.provider} / {model.model}</option>)}
         </select>
@@ -49,9 +50,10 @@ export function ExecutionSettings({settings}: {settings: {execution: Policy; dir
     <p className="text-xs muted leading-6">البديل المفعّل قد يستهلك رصيدًا لدى مصدر آخر. يُستخدم مرة واحدة عند عطل مؤقت أو بلوغ حد الاستخدام، ضمن ميزانية المهمة. حدود المصدر مشتركة بين مفاتيحه؛ إضافة مفتاح لا تضاعف الحصة.</p>
     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {limits.map(([key, label, min, max]) => <label key={key} className="text-sm space-y-2"><span>{label}</span>
-        <input aria-label={label} className="glass-input" required type="number" min={min} max={max} value={value[key]} onChange={e => setValue({...value, [key]: Number(e.target.value)})} />
+        <input aria-label={label} className="glass-input" required type="number" min={min} max={max} value={String(value[key])} onChange={e => setValue({...value, [key]: Number(e.target.value)})} />
       </label>)}
     </div>
+    <label className="flex items-start gap-2 text-sm leading-7"><input type="checkbox" className="mt-2" checked={value.shared_worker_model} onChange={e => setValue({...value, shared_worker_model: e.target.checked})} />استخدام نموذج المدير كأساس مشترك لأجزاء العمل، مع الاحتفاظ بتخصص كل دور. إلغاء الخيار يعيد نموذجًا مستقلًا لكل دور.</label>
     <Button type="submit" isLoading={save.isPending}>حفظ طريقة التنفيذ</Button>
     {save.isSuccess && <p role="status" className="text-sm text-emerald-700">تم حفظ طريقة التنفيذ.</p>}
     {save.error && <p role="alert" className="text-sm text-red-700">{apiError(save.error)}</p>}

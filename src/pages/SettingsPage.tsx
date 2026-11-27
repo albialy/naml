@@ -6,7 +6,7 @@ import { useAuthStore } from "../store/authStore";
 import { ModelSettings } from "../components/ModelSettings";
 import { ModelChoice, apiError } from "../types/project";
 import { GitHubAccount } from "../components/GitHubAccount";
-export function SettingsPage() {
+function ModelPreferences() {
   const user = useAuthStore((s) => s.user);
   const cache = useQueryClient();
   const [saved, setSaved] = useState(false);
@@ -63,7 +63,12 @@ export function SettingsPage() {
           إعدادات النظام والوكلاء واختبار الاتصال ←
         </Link>
       )}
-      <GitHubAccount />
+
     </div>
   );
+}
+
+export function SettingsPage() {
+  const user = useAuthStore(s => s.user);
+  return <div className="max-w-3xl mx-auto"><h1 className="text-2xl font-bold mb-6">إعدادات الحساب</h1>{user?.role === "super_admin" && <ModelPreferences />}<GitHubAccount /></div>;
 }

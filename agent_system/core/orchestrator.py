@@ -1,3 +1,4 @@
+from agent_system.core.coordination import execute as execute_task, emit
 from typing import List
 from concurrent.futures import ThreadPoolExecutor
 import copy
@@ -14,7 +15,7 @@ class Orchestrator:
         """Execute workers sequentially. Each worker sees all previous findings."""
         for worker in workers:
             try:
-                worker.execute()
+                execute_task(worker, memory)
             except Exception as e:
                 memory.add_finding(worker.name, worker.sub_question, "Error: تعذر تشغيل الوكيل", 0.0, status="failed")
 
@@ -24,7 +25,7 @@ class Orchestrator:
         for worker in workers:worker.context_snapshot=snapshot
         settings = memory.run_settings or self.settings_manager.get_settings()
         with ThreadPoolExecutor(max_workers=min(policy_for(settings).parallel_workers,len(workers)) or 1) as pool:
-            futures=[pool.submit(worker.execute) for worker in workers]
+            futures=[pool.submit(execute_task, worker, memory) for worker in workers]
             for worker,future in zip(workers,futures):
                 try:future.result()
                 except Exception:
@@ -54,6 +55,7 @@ class Orchestrator:
             for worker in wave:
                 if set(worker.depends_on) & failed:
                     memory.add_finding(worker.name, worker.sub_question, "تعذر التنفيذ لفشل مهمة يعتمد عليها هذا الجزء", 0, status="failed")
+                    emit(memory, worker, "blocked")
                     failed.add(worker.task_id)
                 else:
                     runnable.append(worker)
@@ -70,8 +72,8 @@ class Orchestrator:
         actual_rounds = min(rounds, max_rounds)
         
         for i in range(actual_rounds):
-            worker_a.execute()
-            worker_b.execute()
+            execute_task(worker_a, memory)
+            execute_task(worker_b, memory)
             # A completed exchange is not evidence of a contradiction.
 
     def run_hybrid(self, plan: dict, workers: List[Worker], memory: SharedMemory):

@@ -60,6 +60,7 @@ export interface ConversationMessage {
   confidence?: number;
   execution?: ExecutionInfo;
   warnings?:string[];
+  simulation_suggested?: boolean;
   reference?: { message_id: string; text: string };
 }
 

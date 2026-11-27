@@ -44,7 +44,7 @@ export function ProjectPage() {
   const prefs = useQuery({
     queryKey: ["preferences", user?.id],
     queryFn: async () => (await apiClient.get("/preferences")).data,
-    enabled: tab === "settings",
+    enabled: tab === "settings" && user?.role === "super_admin",
   });
   const refresh = () => {
     cache.invalidateQueries({ queryKey: ["project", user?.id, id] });
@@ -137,6 +137,7 @@ export function ProjectPage() {
             )}
           </Button>
         ))}
+        <Link to={"/simulation?project_id=" + encodeURIComponent(p.id)} className="px-4 py-2 text-sky-700">المحاكاة</Link>
       </nav>
       {tab === "overview" && <WorkCenter project={p} onRefresh={refresh} openBoard={()=>setTab("board")} />}
       {tab === "chat" && (
@@ -228,7 +229,7 @@ export function ProjectPage() {
             busy={update.isPending}
             onSave={(v) => update.mutate(v)}
           />
-          <div className="glass p-6 rounded-3xl">
+          {user?.role === "super_admin" && <div className="glass p-6 rounded-3xl">
             <h2 className="font-bold text-lg mb-4">
               النموذج المدير لهذا المشروع
             </h2>
@@ -249,7 +250,7 @@ export function ProjectPage() {
                 onReset={() => update.mutate({ director: null })}
               />
             )}
-          </div>
+          </div>}
           {update.isSuccess && (
             <p role="status" className="text-emerald-700">
               تم حفظ إعدادات المشروع.

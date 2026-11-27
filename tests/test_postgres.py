@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-pgserver = pytest.importorskip("pgserver")
+try:
+    import pgserver
+except ImportError:
+    pgserver = None
 import psycopg
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
@@ -25,6 +28,8 @@ def pg_uri(tmp_path_factory):
     if existing:
         yield existing
         return
+    if pgserver is None:
+        pytest.skip("Supply NAML_TEST_POSTGRES_URL or install pgserver for PostgreSQL integration tests.")
     try:
         server = pgserver.get_server(tmp_path_factory.mktemp("postgres") / "pgdata", cleanup_mode="stop")
     except (OSError, subprocess.CalledProcessError) as error:
@@ -112,3 +117,21 @@ def test_sqlite_to_postgres_preserves_conversations(pg_uri, tmp_path, monkeypatc
     finally:
         with psycopg.connect(pg_uri, autocommit=True) as conn:
             conn.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+
+
+def test_postgres_simulation_claims_are_exclusive_and_cancel_fenced(postgres_store, monkeypatch):
+    from agent_system.simulation import service
+    from agent_system.simulation.schema import SaveScenario, ProcessSpec, RunRequest, template
+    monkeypatch.setenv("NAML_SIMULATION_ENABLED", "true")
+    service.pulse()
+    scenario = service.save_scenario("owner", SaveScenario(spec=ProcessSpec.model_validate(template())))
+    request = RunRequest(scenario_id=scenario["id"], reviewed=True, request_key="same-request")
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        jobs = list(pool.map(lambda _: service.enqueue("owner", request), range(3)))
+    assert len({j["id"] for j in jobs}) == 1
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        claims = [c for c in pool.map(lambda _: service.claim(), range(3)) if c]
+    assert len(claims) == 1
+    job = claims[0]
+    service.cancel("owner", job["id"])
+    assert not service.finish(job["id"], job["lease_token"], result={"stale": True})

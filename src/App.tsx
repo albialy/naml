@@ -1,3 +1,4 @@
+import { SimulationPage } from "./pages/SimulationPage";
 import { BrowserPage } from "./pages/BrowserPage";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/result/:id" element={<ResultPage />} />
             <Route path="/conversation/:id" element={<ConversationPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/simulation" element={<SimulationPage />} />
             <Route path="/browser" element={<BrowserPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/projects" element={<ProjectsPage />} />

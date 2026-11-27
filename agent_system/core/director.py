@@ -11,8 +11,9 @@ from agent_system.core.connectors.openrouter_connector import OpenRouterConnecto
 from agent_system.core.execution_policy import policy_for, role_config, answer_style, ROUTER_PROMPT
 from agent_system.core.execution_runtime import ExecutionRuntime, TrackedConnector, ExecutionCancelled
 from agent_system.core.role_cards import planning_catalog, role_prompt
+from agent_system.core.goal_policy import GOAL_POLICY
 
-DIRECTOR_SYSTEM_PROMPT = """Plan only the work needed for the user's actual request.
+DIRECTOR_SYSTEM_PROMPT = GOAL_POLICY + """Plan only the work needed for the user's actual request.
 There are no mandatory thinking stages. Do not reframe a clear request into a larger project.
 Use 1-4 focused agents at most, within the supplied limit. Prefer one agent when sufficient.
 Parallelize independent questions; specify depends_on using sub_question_id values for real dependencies.
@@ -234,7 +235,11 @@ class Director:
             worker_type = agent_data.get("worker_type") if agent_data.get("worker_type") in workers_config else worker_type
             if agent_data.get("worker_type") == "director":
                 worker_type = "director"
-            config = role_config(settings, worker_type)
+            config = dict(role_config(settings, worker_type))
+            # Shared foundation by default; task scope and evidence remain role-specific.
+            if policy_for(settings).shared_worker_model:
+                foundation = settings["director"]
+                config.update(provider=foundation["provider"], model=foundation["model"])
             needs_web = bool(agent_data.get("needs_web", False))
             # Research synthesis uses the chosen worker's provider too.
             connector = self._connector_for(config)
@@ -449,7 +454,8 @@ Check whether the answer satisfies the request and is supported by the evidence.
             strategy = self.choose_strategy(task, memory)
             route = strategy["route"]
             memory.execution.update(route=route, reason=str(strategy.get("reason", ""))[:300],
-                                    project_relevant=strategy.get("project_relevant") is True)
+                                    project_relevant=strategy.get("project_relevant") is True,
+                                    suggest_simulation=strategy.get("suggest_simulation") is True)
             if memory.response_detail == "auto":
                 memory.response_detail = strategy.get("detail", "auto")
             memory.save_to_file()
@@ -498,11 +504,12 @@ Check whether the answer satisfies the request and is supported by the evidence.
             memory.final_synthesis = "تم إيقاف الرد بناءً على طلبك."
         except Exception as exc:
             memory.status = "failed"
-            memory.final_synthesis = "تعذر إكمال الطلب: " + str(exc)
+            memory.execution["error_type"] = type(exc).__name__
+            memory.final_synthesis = "تعذر إكمال الطلب. يمكنك إعادة المحاولة."
         finally:
             metrics = memory._runtime.summary()
             memory.execution.update(metrics)
             if any(row.get("finish_reason") == "length" and row["stage"] in ("answer", "synthesis", "revision") for row in metrics["calls"]):
-                memory.warnings.append("بلغ الرد حد الإخراج المحدد للنموذج؛ قد يكون غير مكتمل.")
+                memory.warnings.append("قد يكون الرد غير مكتمل. يمكنك طلب المتابعة.")
             memory.completed_at = datetime.now().isoformat()
             memory.save_to_file()

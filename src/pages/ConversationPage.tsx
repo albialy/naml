@@ -90,6 +90,7 @@ function ConversationWorkspace({ id }: { id: string }) {
       <div className="min-w-0"><h1 className="text-xl font-bold break-words">{conversation.title}</h1><p className="text-xs muted mt-2">ناقش، عدّل، وواصل من حيث وصلت.</p></div>
       <div className="flex gap-3 flex-wrap items-center text-sm text-sky-700">
         <button type="button" aria-pressed={preview} className="flex gap-1 items-center" onClick={() => setPreview(!preview)}><PanelLeft size={17}/>{preview ? 'إخفاء المعاينة' : 'معاينة العمل'}</button>
+        <Link to={conversation.project_id ? "/simulation?project_id=" + encodeURIComponent(conversation.project_id) : "/simulation"}>فتح المحاكاة</Link>
         <Link to="/" className="flex gap-1 items-center"><Plus size={17}/>محادثة جديدة</Link>
       </div>
     </header>
@@ -120,6 +121,7 @@ function ConversationWorkspace({ id }: { id: string }) {
             }} className="leading-8 break-words [&_p]:mb-3 [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:font-bold [&_pre]:overflow-auto [&_pre]:bg-slate-100 [&_pre]:p-4 [&_pre]:rounded-xl [&_a]:text-sky-700 [&_ul]:list-disc [&_ul]:pr-5">
               {message.role === 'user' ? <p className="whitespace-pre-wrap">{message.content}</p> : <ReactMarkdown components={{pre: ({children}) => <details className="my-3"><summary className="cursor-pointer text-sm text-sky-700">عرض الكود</summary><pre dir="ltr" className="text-left text-sm">{children}</pre></details>}}>{message.content}</ReactMarkdown>}
             </div>}
+            {message.role === "assistant" && message.simulation_suggested && <Link className="block my-3 rounded-xl bg-sky-100 p-3 text-sm text-sky-800" to={conversation.project_id ? "/simulation?project_id=" + encodeURIComponent(conversation.project_id) : "/simulation"}>يمكن اختبار هذا السؤال بمحاكاة. افتح المساحة وحدد المراحل والافتراضات؛ لن يبدأ الحساب تلقائيًا. ←</Link>}
             {!editing && <div className="flex items-center flex-wrap gap-3 mt-3 text-xs text-sky-700">
               <button type="button" className="inline-flex items-center gap-1" onClick={() => copy(message.id, message.content)}><Copy size={14}/>{copiedId === message.id ? 'تم النسخ' : 'نسخ'}</button>
               {owner && message.status !== 'cancelled' && <button type="button" className="inline-flex items-center gap-1" onClick={() => quote(message.id, message.content)}><Quote size={14}/>مناقشة هذا</button>}

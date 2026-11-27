@@ -4,6 +4,8 @@ from agent_system.core.auth.middleware import get_current_user
 from agent_system.core.auth.models import User, UserRole
 from agent_system.core.database import get_database, ConversationBusy
 
+from agent_system.api.presentation import conversation as present_conversation
+
 router = APIRouter(prefix="/api/conversations")
 
 
@@ -19,7 +21,7 @@ async def get_conversation(conversation_id: str, current_user: User = Depends(ge
         raise HTTPException(status_code=404, detail="المحادثة غير موجودة")
     if conversation["user_id"] != current_user.id and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="لا يمكنك الوصول لهذه المحادثة")
-    return conversation
+    return present_conversation(conversation, current_user)
 
 
 class StopRequest(BaseModel):
@@ -46,9 +48,9 @@ def change(action):
 
 @router.post("/{conversation_id}/stop")
 def stop(conversation_id: str, body: StopRequest, user: User = Depends(get_current_user)):
-    return change(lambda: get_database().cancel_turn(conversation_id, user.id, body.session_id, body.revision, body.branch_id))
+    return present_conversation(change(lambda: get_database().cancel_turn(conversation_id, user.id, body.session_id, body.revision, body.branch_id)), user)
 
 
 @router.post("/{conversation_id}/branch")
 def branch(conversation_id: str, body: BranchRequest, user: User = Depends(get_current_user)):
-    return change(lambda: get_database().switch_branch(conversation_id, user.id, body.branch_id, body.revision))
+    return present_conversation(change(lambda: get_database().switch_branch(conversation_id, user.id, body.branch_id, body.revision)), user)

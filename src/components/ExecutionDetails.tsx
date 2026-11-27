@@ -1,8 +1,10 @@
+import { useAuthStore } from "../store/authStore";
 import { ExecutionInfo } from "../types";
 
 const routes: Record<string, string> = {direct: "إجابة مباشرة", single: "نموذج واحد", clarify: "استيضاح", research: "بحث بالمصادر", team: "عمل جماعي"};
 export function ExecutionDetails({execution: info}: {execution?: ExecutionInfo}) {
-  if (!info?.route) return null;
+  const user = useAuthStore(s => s.user);
+  if (user?.role !== "super_admin" || !info?.route) return null;
   return <details className="text-xs text-slate-500 max-w-full">
     <summary className="cursor-pointer">{routes[info.route] || info.route} · تفاصيل التنفيذ</summary>
     <div className="mt-3 space-y-2 break-words">
