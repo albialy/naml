@@ -3,6 +3,8 @@ from agent_system.core.auth.models import User, UserRole
 from agent_system.core.auth.middleware import get_current_user
 from agent_system.core.storage import get_storage
 
+from agent_system.api.presentation import session as present_session
+
 router = APIRouter()
 
 @router.get("/api/sessions")
@@ -27,4 +29,4 @@ async def get_session(session_id: str, current_user: User = Depends(get_current_
         raise HTTPException(status_code=404, detail={"error": "Session not found", "code": "NOT_FOUND"})
     if current_user.role != UserRole.SUPER_ADMIN and data.get("user_id") != current_user.id:
         raise HTTPException(status_code=403, detail={"error": "Access denied", "code": "FORBIDDEN"})
-    return data
+    return present_session(data, current_user)

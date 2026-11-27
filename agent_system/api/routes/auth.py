@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Security
 from pydantic import BaseModel
 from agent_system.core.auth.manager import auth_manager
-from agent_system.core.auth.models import User
+from agent_system.core.auth.models import User, UserRole
 from agent_system.core.auth.middleware import get_current_user
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -46,6 +46,8 @@ async def logout(credentials: HTTPAuthorizationCredentials = Security(security))
 async def get_me(current_user: User = Depends(get_current_user)):
     user_dict = current_user.to_dict()
     user_dict.pop("password_hash", None)
+    if current_user.role != UserRole.SUPER_ADMIN:
+        user_dict.pop("allowed_models", None)
     return user_dict
 
 @router.post("/api/auth/change-password")

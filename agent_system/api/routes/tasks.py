@@ -10,6 +10,8 @@ from agent_system.core.auth.manager import auth_manager
 from agent_system.core.storage import get_storage
 from agent_system.core.database import get_database, ConversationBusy
 
+from agent_system.api.presentation import session as present_session
+
 router = APIRouter()
 director = Director()
 
@@ -46,7 +48,7 @@ def run_task_background(task: str, memory: SharedMemory):
         runner.run(task, memory)
     except Exception as e:
         memory.status = "failed"
-        memory.final_synthesis = str(e)
+        memory.final_synthesis = "تعذر إكمال الطلب. يمكنك إعادة المحاولة."
         memory.save_to_file()
 
     saved = get_database().get_session(memory.session_id)
@@ -131,7 +133,7 @@ async def get_task_status(session_id: str, current_user: User = Depends(get_curr
     if data is None:
         raise HTTPException(status_code=404, detail={"error": "Session not found", "code": "NOT_FOUND"})
     _check_user_access(data, current_user)
-    return data
+    return present_session(data, current_user)
 
 @router.get("/api/task/{session_id}/result")
 async def get_task_result(session_id: str, current_user: User = Depends(get_current_user)):
@@ -143,12 +145,7 @@ async def get_task_result(session_id: str, current_user: User = Depends(get_curr
     if data.get("status") not in ("complete", "failed", "cancelled"):
         raise HTTPException(status_code=400, detail={"error": "Task not complete yet", "code": "NOT_COMPLETE"})
 
-    return {
-        "final_synthesis": data.get("final_synthesis"),
-        "confidence_final": data.get("confidence_final"),
-        "stress_test_results": data.get("stress_test_results"),
-        "status": data.get("status")
-    }
+    return present_session(data, current_user)
 
 @router.delete("/api/task/{session_id}")
 async def delete_task(session_id: str, current_user: User = Depends(require_super_admin)):

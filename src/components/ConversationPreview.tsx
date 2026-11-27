@@ -53,7 +53,7 @@ export function ConversationPreview({ messages, onQuote }: {
       if (!result.data.screenshot) throw new Error('no screenshot');
       setShot({ id: versionId, png: result.data.screenshot });
     } catch (e: any) {
-      setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'تعذر التصوير. تحقق من إعداد خدمة المتصفح.');
+      setError(typeof e.response?.data?.detail === 'string' ? e.response.data.detail : 'تعذر التصوير الآن. أعد المحاولة بعد قليل.');
     } finally { setBusy(false); }
   }
   function download() {
@@ -71,7 +71,7 @@ export function ConversationPreview({ messages, onQuote }: {
       <div className="flex items-center gap-3 flex-wrap text-sm">
         <button type="button" className="flex gap-1 items-center" onClick={() => {setMobile(!mobile);setShot(null);}}>{mobile ? <Monitor size={16}/> : <Smartphone size={16}/>} {mobile ? 'كمبيوتر' : 'هاتف'}</button>
         <button type="button" className="flex gap-1 items-center" onClick={download}><Download size={16}/>تنزيل HTML</button>
-        <button type="button" className="flex gap-1 items-center disabled:opacity-50" disabled={busy} onClick={capture}><Camera size={16}/>{busy ? 'جارٍ التصوير…' : 'تصوير بـ Chromium'}</button>
+        <button type="button" className="flex gap-1 items-center disabled:opacity-50" disabled={busy} onClick={capture}><Camera size={16}/>{busy ? 'جارٍ التصوير…' : 'التقاط صورة'}</button>
       </div>
       <p className="text-xs muted">حدّد نصًا داخل المعاينة لإرفاقه برسالتك. اختيار نسخة قديمة يعرضها فقط؛ اطلب من نمل اعتمادها أو تعديلها في رسالة جديدة.</p>
     </div>

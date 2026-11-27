@@ -17,6 +17,7 @@ class SharedMemory:
         self.project_context = ""
         self.run_settings = None
         self.execution = {}
+        self.coordination = {"revision": 0, "tasks": {}, "events": []}
         self.response_detail = "auto"
         self.warnings = []
         self.task_original: str = task_original
@@ -68,6 +69,7 @@ class SharedMemory:
             "project_context": self.project_context,
             "run_settings": self.run_settings,
             "execution": self.execution,
+            "coordination": self.coordination,
             "response_detail": self.response_detail,
             "warnings": self.warnings,
             "task_original": self.task_original,

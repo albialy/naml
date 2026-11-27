@@ -101,7 +101,8 @@ def test_all_worker_failures_never_become_success(database,monkeypatch):
     monkeypatch.setattr(d,'_execute_pattern',lambda *a:m.add_finding('باحث','الجمهور','Error: missing model',0,status='failed'))
     monkeypatch.setattr(d,'_director_connector',lambda:pytest.fail('must not synthesize errors'))
     d.run(m.task_original,m)
-    assert m.status=='failed' and 'لم يتم إنتاج تحليل' in m.final_synthesis
+    assert m.status=='failed' and m.final_synthesis == 'تعذر إكمال الطلب. يمكنك إعادة المحاولة.'
+    assert 'missing model' not in m.final_synthesis
 
 
 def test_partial_evidence_excludes_error_body(database,monkeypatch):

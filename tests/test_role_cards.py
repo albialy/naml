@@ -102,6 +102,7 @@ def test_team_selects_custom_roles_and_passes_cards_to_dependent_work(database, 
     assert settings_manager.add_worker("reviewer", config("review-engine", reviewer_card), "admin")
     settings = settings_manager.get_settings()
     settings["execution"]["critic_role"] = "reviewer"
+    settings["execution"]["shared_worker_model"] = False  # Explicit specialist-engine override.
     plan = {"sub_questions": [{"id": 1, "question": "أصلح الخطأ"}, {"id": 2, "question": "راجع التصحيح"}],
             "agents": [{"name": "Coder", "worker_type": "programmer", "sub_question_id": 1},
                        {"name": "Reviewer", "worker_type": "reviewer", "sub_question_id": 2, "depends_on": [1]}]}

@@ -12,7 +12,7 @@ import os
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Multi-Agent AI Orchestration")
+app = FastAPI(title="Naml", docs_url=None, redoc_url=None, openapi_url=None)
 
 # CORS middleware for localhost:3000 and any origin needed
 app.add_middleware(
@@ -23,8 +23,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from agent_system.api.routes import browser
+from agent_system.api.routes import browser, simulation
 app.include_router(browser.router)
+app.include_router(simulation.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(settings.router)
